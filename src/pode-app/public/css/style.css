@@ -322,15 +322,9 @@ body {
     color: var(--primary-color);
 }
 
-.logo-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
+.header-logo {
     height: 32px;
-    background-color: var(--primary-color);
-    color: white;
-    border-radius: var(--border-radius);
+    width: auto;
 }
 
 .header-center {
