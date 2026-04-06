@@ -146,6 +146,10 @@ Start-PodeServer -Name 'PIM-Activation' -Threads 5 {
         Invoke-GetRolePolicies -Request $WebEvent.Request -RoleId $WebEvent.Parameters.roleId
     }
 
+    Add-PodeRoute -Method Get -Path '/api/history/audits' -ScriptBlock {
+        Invoke-GetAuditHistory -Request $WebEvent.Request
+    }
+
     # Configuration routes
     Add-PodeRoute -Method Get -Path '/api/config/features' -ScriptBlock {
         Invoke-GetFeatureConfig -Request $WebEvent.Request

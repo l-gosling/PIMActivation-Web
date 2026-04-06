@@ -227,6 +227,7 @@ class RoleManager {
             showProgress('Deactivating roles', uids.length);
             let succeeded = [];
             let failed = [];
+            let historyEvents = [];
 
             for (let i = 0; i < uids.length; i++) {
                 const uid = uids[i];
@@ -234,7 +235,7 @@ class RoleManager {
                 const roleLabel = role
                     ? `[${role.type}] ${role.name}${role.scope && role.scope !== 'Directory' ? ' (' + role.scope + ')' : ''}`
                     : uid;
-                updateProgress(i, uids.length, role ? `${role.name}${role.scope && role.scope !== 'Directory' ? ' (' + role.scope + ')' : ''}` : uid);
+                updateProgress(i, uids.length, role ? `${role.name}${role.scope ? ' (' + role.scope + ')' : ''}` : uid);
                 try {
                     const roleType = role?.type === 'Group' ? 'Group' : role?.type === 'AzureResource' ? 'AzureResource' : 'User';
                     const result = await window.apiClient.deactivateRole(role?.id || uid, roleType, {
@@ -242,14 +243,24 @@ class RoleManager {
                     });
                     if (result.success) {
                         succeeded.push(roleLabel);
+                        historyEvents.push({ action: 'deactivate', roleName: role?.name, roleType: role?.type, scope: role?.scope, success: true });
                     } else {
                         failed.push({ role: roleLabel, error: result.error || 'Unknown error' });
+                        historyEvents.push({ action: 'deactivate', roleName: role?.name, roleType: role?.type, scope: role?.scope, success: false, error: result.error });
                     }
                 } catch (error) {
                     failed.push({ role: roleLabel, error: error.message });
+                    historyEvents.push({ action: 'deactivate', roleName: role?.name, roleType: role?.type, scope: role?.scope, success: false, error: error.message });
                 }
-                updateProgress(i + 1, uids.length, role ? `${role.name}${role.scope && role.scope !== 'Directory' ? ' (' + role.scope + ')' : ''}` : uid);
+                updateProgress(i + 1, uids.length, role ? `${role.name}${role.scope ? ' (' + role.scope + ')' : ''}` : uid);
             }
+
+            // Record history
+            if (historyEvents.length > 0) {
+                await window.historyManager.recordEvents(historyEvents);
+            }
+
+            hideProgress();
 
             if (succeeded.length > 0 && failed.length === 0) {
                 const roleList = succeeded.join('\n');

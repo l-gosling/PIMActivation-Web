@@ -68,15 +68,21 @@ class ProfileManager {
                     <button id="profile-save-btn" class="btn btn-primary btn-sm">Save</button>
                 </div>`;
         } else {
+            const eligible = window.roleManager?.eligibleRoles || [];
             const items = this.profiles.map((p, i) => {
                 const roleCount = p.roles ? p.roles.length : 0;
                 const durH = Math.floor((p.durationMinutes || 60) / 60);
                 const durM = (p.durationMinutes || 60) % 60;
                 const durText = (durH > 0 ? `${durH}h` : '') + (durM > 0 ? `${durM}m` : '') || '0m';
+                const roleNames = (p.roles || []).map(r => {
+                    const live = eligible.find(e => (e.uid || e.id) === r.uid);
+                    return live ? live.name : (r.uid || 'Unknown');
+                });
+                const tooltip = roleNames.join('&#10;');
                 return `<div class="profile-item" data-index="${i}">
                     <div class="profile-info">
                         <span class="profile-name">${escapeHtml(p.name)}</span>
-                        <span class="profile-meta">${roleCount} role${roleCount !== 1 ? 's' : ''} &middot; ${durText}</span>
+                        <span class="profile-meta" title="${tooltip}">${roleCount} role${roleCount !== 1 ? 's' : ''} &middot; ${durText}</span>
                     </div>
                     <div class="profile-actions">
                         <button class="btn btn-primary btn-sm profile-activate-btn" data-index="${i}">Activate</button>

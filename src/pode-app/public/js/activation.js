@@ -158,6 +158,7 @@ class ActivationManager {
             let succeeded = [];
             let failed = [];
             let capped = [];
+            let historyEvents = [];
 
             for (let i = 0; i < roles.length; i++) {
                 const role = roles[i];
@@ -196,14 +197,24 @@ class ActivationManager {
                         if (isCapped) {
                             capped.push(`${roleLabel} → ${capText}`);
                         }
+                        historyEvents.push({ action: 'activate', roleName: role.name, roleType: role.type, scope: role.scope, durationMinutes: effectiveDuration, justification, success: true });
                     } else {
                         failed.push({ role: roleLabel, error: result.error || 'Unknown error' });
+                        historyEvents.push({ action: 'activate', roleName: role.name, roleType: role.type, scope: role.scope, durationMinutes: effectiveDuration, success: false, error: result.error });
                     }
                 } catch (error) {
                     failed.push({ role: roleLabel, error: error.message });
+                    historyEvents.push({ action: 'activate', roleName: role.name, roleType: role.type, scope: role.scope, durationMinutes: effectiveDuration, success: false, error: error.message });
                 }
                 updateProgress(i + 1, roles.length, displayName);
             }
+
+            // Record history
+            if (historyEvents.length > 0) {
+                await window.historyManager.recordEvents(historyEvents);
+            }
+
+            hideProgress();
 
             // Clear selections regardless of outcome
             window.roleManager.selectedEligible.clear();

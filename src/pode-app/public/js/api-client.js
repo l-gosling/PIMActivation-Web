@@ -98,6 +98,9 @@ class ApiClient {
     // User preferences (silent — don't logout on failure)
     async getUserPreferences()              { return this.silentGet('/api/user/preferences'); }
     async updateUserPreferences(preferences) { return this.silentPost('/api/user/preferences', preferences); }
+
+    // Audit history from Entra logs (silent — non-critical)
+    async getAuditHistory() { return this.silentGet('/api/history/audits'); }
 }
 
 // Global API client instance

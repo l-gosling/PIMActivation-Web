@@ -103,6 +103,7 @@ function Get-DefaultPreferences {
         refreshInterval  = 300
         showAzureRoles   = $true
         profiles         = @()
+        history          = @()
     }
 }
 
@@ -119,6 +120,7 @@ function Get-AllowedPreferences {
         refreshInterval  = 'int'
         showAzureRoles   = 'bool'
         profiles         = 'json'
+        history          = 'json'
     }
 }
 

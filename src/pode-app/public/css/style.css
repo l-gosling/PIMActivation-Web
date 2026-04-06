@@ -1073,6 +1073,238 @@ body.dark-theme .section-title-bar {
 }
 
 /* ============================================================================
+   History Modal & Analytics
+   ============================================================================ */
+
+.history-section-title {
+    font-size: var(--font-size-md);
+    font-weight: 600;
+    color: var(--neutral-primary);
+    margin: var(--spacing-lg) 0 var(--spacing-sm) 0;
+    padding-bottom: var(--spacing-xs);
+    border-bottom: 1px solid var(--neutral-light-alt);
+}
+
+.history-table-container {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.history-empty {
+    padding: var(--spacing-xl);
+    text-align: center;
+    color: var(--neutral-tertiary);
+    font-size: var(--font-size-base);
+}
+
+.history-action-activate {
+    color: var(--success-color);
+    font-weight: 600;
+    font-size: var(--font-size-sm);
+}
+
+.history-action-deactivate {
+    color: var(--neutral-secondary);
+    font-weight: 600;
+    font-size: var(--font-size-sm);
+}
+
+.history-status-success {
+    color: var(--success-color);
+    font-weight: 600;
+    font-size: var(--font-size-sm);
+}
+
+.history-status-failed {
+    color: var(--danger-color);
+    font-weight: 600;
+    font-size: var(--font-size-sm);
+}
+
+.history-source-entra {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--primary-color);
+    background: rgba(0, 120, 212, 0.1);
+    padding: 1px 5px;
+    border-radius: 3px;
+    margin-left: 4px;
+}
+
+.history-source-local {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--neutral-tertiary);
+    padding: 1px 5px;
+}
+
+.history-row-entra {
+    opacity: 0.75;
+}
+
+.history-error-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    margin-left: 6px;
+    padding: 0;
+    border: 2px solid var(--danger-color);
+    border-radius: 50%;
+    background: var(--danger-color);
+    color: white;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 800;
+    line-height: 1;
+    cursor: pointer;
+    vertical-align: middle;
+}
+
+.history-error-btn:hover {
+    background: var(--danger-hover);
+}
+
+/* Analytics Cards */
+.analytics-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: var(--spacing-md);
+    margin-bottom: var(--spacing-lg);
+}
+
+.analytics-card {
+    background: var(--neutral-light);
+    border-radius: 6px;
+    padding: var(--spacing-md);
+    text-align: center;
+}
+
+.analytics-value {
+    font-size: var(--font-size-xl);
+    font-weight: 700;
+    color: var(--primary-color);
+}
+
+.analytics-label {
+    font-size: var(--font-size-sm);
+    color: var(--neutral-secondary);
+    margin-top: var(--spacing-xs);
+}
+
+.analytics-section {
+    margin-bottom: var(--spacing-lg);
+}
+
+.analytics-section h3 {
+    font-size: var(--font-size-base);
+    font-weight: 600;
+    margin-bottom: var(--spacing-sm);
+    color: var(--neutral-primary);
+}
+
+/* Analytics Bar Chart */
+.analytics-bars {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+}
+
+.analytics-bar-row {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+.analytics-bar-label {
+    width: 160px;
+    flex-shrink: 0;
+    font-size: var(--font-size-sm);
+    color: var(--neutral-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.analytics-bar-label-short {
+    width: 40px;
+}
+
+.analytics-bar-track {
+    flex: 1;
+    height: 8px;
+    background: var(--neutral-light-alt);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.analytics-bar-fill {
+    height: 100%;
+    background: var(--primary-color);
+    border-radius: 4px;
+    transition: width 0.3s ease;
+    min-width: 2px;
+}
+
+.analytics-bar-value {
+    width: 30px;
+    text-align: right;
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: var(--neutral-secondary);
+}
+
+/* Dark theme — variables are inverted, so use explicit colors */
+.dark-theme .history-section-title {
+    color: #F3F2F1;
+    border-bottom-color: #404040;
+}
+
+.dark-theme .history-table-container td {
+    color: #F3F2F1;
+}
+
+.dark-theme .history-table-container th {
+    color: #F3F2F1;
+    background: #2D2D2D;
+}
+
+.dark-theme .history-empty {
+    color: #C8C6C4;
+}
+
+.dark-theme .analytics-card {
+    background: #2D2D2D;
+}
+
+.dark-theme .analytics-value {
+    color: #4da3e0;
+}
+
+.dark-theme .analytics-label {
+    color: #C8C6C4;
+}
+
+.dark-theme .analytics-section h3 {
+    color: #F3F2F1;
+}
+
+.dark-theme .analytics-bar-label {
+    color: #F3F2F1;
+}
+
+.dark-theme .analytics-bar-value {
+    color: #C8C6C4;
+}
+
+.dark-theme .analytics-bar-track {
+    background: #333333;
+}
+
+/* ============================================================================
    Profiles Dropdown
    ============================================================================ */
 

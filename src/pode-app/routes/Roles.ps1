@@ -232,3 +232,89 @@ function Invoke-GetRolePolicies {
         } -StatusCode 500
     }
 }
+
+<#
+.SYNOPSIS
+    Get PIM activation/deactivation history from Entra audit logs
+#>
+function Invoke-GetAuditHistory {
+    [CmdletBinding()]
+    param(
+        [object]$Request
+    )
+
+    try {
+        if (-not (Assert-AuthenticatedSession)) { return }
+
+        $ctx = Get-CurrentSessionContext
+        $accessToken = $ctx.AccessToken
+        if (-not $accessToken) {
+            Write-PodeJsonResponse -Value @{ success = $false; error = 'No access token' } -StatusCode 401
+            return
+        }
+
+        $userId = Get-CurrentUserId -AccessToken $accessToken
+
+        # Query Entra audit logs for PIM role management events by this user (last 30 days, max 100)
+        $since = (Get-Date -AsUTC).AddDays(-30).ToString('yyyy-MM-ddTHH:mm:ssZ')
+        $filter = [System.Web.HttpUtility]::UrlEncode("category eq 'RoleManagement' and initiatedBy/user/id eq '$userId' and activityDateTime ge $since")
+        $result = Invoke-GraphApi -AccessToken $accessToken -Endpoint "/auditLogs/directoryAudits?`$filter=$filter&`$top=100&`$orderby=activityDateTime desc"
+
+        $entries = [System.Collections.ArrayList]::new()
+        foreach ($log in @($result.value)) {
+            $activity = $log.activityDisplayName
+            $action = $null
+
+            # Map activity names to action types
+            if ($activity -match 'Add member to role completed \(PIM activation\)' -or
+                $activity -match 'Add eligible member to role in PIM completed' -or
+                $activity -match 'member to role.*activation') {
+                $action = 'activate'
+            }
+            elseif ($activity -match 'Remove member from role.*PIM' -or
+                    $activity -match 'Remove eligible member from role in PIM') {
+                $action = 'deactivate'
+            }
+
+            if (-not $action) { continue }
+
+            # Extract role name from target resources
+            $roleName = 'Unknown Role'
+            $scope = 'Directory'
+            if ($log.targetResources -and @($log.targetResources).Count -gt 0) {
+                foreach ($target in @($log.targetResources)) {
+                    if ($target.displayName -and $target.type -eq 'Role') {
+                        $roleName = $target.displayName
+                    }
+                    elseif ($target.displayName -and -not $target.type) {
+                        $roleName = $target.displayName
+                    }
+                }
+            }
+
+            $null = $entries.Add(@{
+                action    = $action
+                roleName  = $roleName
+                roleType  = 'Entra'
+                scope     = $scope
+                success   = ($log.result -eq 'success')
+                error     = if ($log.result -ne 'success') { $log.resultReason } else { $null }
+                timestamp = $log.activityDateTime
+                source    = 'entra'
+            })
+        }
+
+        Write-PodeJsonResponse -Value @{
+            success = $true
+            entries = @($entries)
+        } -StatusCode 200
+    }
+    catch {
+        Write-Log -Message "Audit history error: $($_.Exception.Message)" -Level 'Warning'
+        Write-PodeJsonResponse -Value @{
+            success = $false
+            entries = @()
+            error   = 'Could not load audit history'
+        } -StatusCode 200
+    }
+}

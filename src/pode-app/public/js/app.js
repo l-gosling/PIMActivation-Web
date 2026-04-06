@@ -213,8 +213,12 @@ class PIMApplication {
             // Load initial role data
             await window.roleManager.loadRoles();
 
-            // Load saved profiles
+            // Load saved profiles and history
             await window.profileManager.loadProfiles();
+            await window.historyManager.loadHistory();
+
+            // Load Entra audit logs in background (non-blocking)
+            window.historyManager.loadAuditHistory().catch(() => {});
 
             this.initialized = true;
             console.log('PIM Application initialized');
