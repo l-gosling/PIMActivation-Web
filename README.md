@@ -8,24 +8,22 @@
 
 A web-based Privileged Identity Management (PIM) tool for Microsoft Entra ID, PIM-enabled groups, and Azure Resources. Built with Pode (PowerShell HTTP server) running in Docker, with Entra ID OAuth 2.0 authentication.
 
-> This is the web-based successor to the [PIMActivation PowerShell Module](https://github.com/l-gosling/PIMActivation) (Windows Forms GUI).
-
 ## Key Features
 
 - **Web-Based UI** - No client installation required, accessible from any browser
 - **Entra ID Roles** - View and activate/deactivate Entra ID directory roles with AU scope support
 - **PIM Groups** - Manage PIM-enabled security group memberships (member/owner)
 - **Azure Resources** - Activate/deactivate Azure subscription and resource roles via PIM
+- **Saved Profiles** - Save frequently used role combinations and activate them with two clicks
+- **Activation History** - Built-in history log with analytics (success rate, most activated roles, activity by day)
+- **Entra Audit Logs** - Background sync of PIM events from Entra audit logs (last 30 days)
+- **Progress Bar** - Visual progress for batch activations/deactivations with per-role policy enforcement
+- **Policy Enforcement** - Automatic duration capping when a role's policy max is lower than the selected duration
 - **OAuth 2.0** - Secure authentication via Entra ID with automatic token refresh
 - **HTTPS** - TLS support with custom certificates
-- **Dark/Light Theme** - Auto, light, or dark mode with full color customization via environment variables
-- **Persistent Preferences** - Per-user settings stored on Docker volume
-- **Policy Compliance** - Shows MFA, justification, ticket, and approval requirements per role
-- **Customizable** - Branding (logo, colors, copyright) configurable via `.env` file
-
-## Screenshots
-
-*Table-based layout showing Active Roles and Eligible Roles with type badges, scope, member type, policy requirements, and expiration times.*
+- **Dark/Light Theme** - Auto, light, or dark mode with full color customization
+- **Security Headers** - HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy
+- **SameSite Cookies** - CSRF protection via SameSite=Lax on all session cookies
 
 ## Quick Start
 
@@ -63,7 +61,7 @@ See [CERTIFICATES.md](CERTIFICATES.md) for production certificate options (Let's
 ### 4. Start the Container
 
 ```bash
-docker-compose up -d --build
+docker compose up -d --build
 ```
 
 ### 5. Access the UI
@@ -98,23 +96,24 @@ Add the following **delegated** permissions and grant admin consent:
 
 | Permission | API | Type | Admin Consent | Purpose |
 |-----------|-----|------|---------------|---------|
-| `User.Read` | Microsoft Graph | Delegated | No | Read signed-in user's display name, email, and object ID for session and UI display |
-| `openid` | Microsoft Graph | Delegated | No | OpenID Connect sign-in — provides the `id_token` used to identify the user during OAuth callback |
-| `profile` | Microsoft Graph | Delegated | No | Access user profile claims (name, preferred_username) shown in the header and session |
-| `email` | Microsoft Graph | Delegated | No | Access user email address for display and preference storage key |
-| `offline_access` | Microsoft Graph | Delegated | No | Obtain a refresh token to silently renew expired Graph and Azure tokens without re-login |
-| `RoleManagement.ReadWrite.Directory` | Microsoft Graph | Delegated | Yes | List eligible/active Entra ID directory roles, submit selfActivate and selfDeactivate requests, and read role definitions |
-| `PrivilegedAccess.ReadWrite.AzureADGroup` | Microsoft Graph | Delegated | Yes | List eligible/active PIM-enabled group memberships and submit activation/deactivation requests for group member/owner roles |
-| `Policy.Read.All` | Microsoft Graph | Delegated | Yes | Read role management policies to display per-role requirements (max duration, MFA, justification, ticket, approval) in the eligible roles table |
-| `AdministrativeUnit.Read.All` | Microsoft Graph | Delegated | Yes | Resolve Administrative Unit IDs to display names (e.g. show "AU: IT Department" instead of a GUID in the scope column) |
+| `User.Read` | Microsoft Graph | Delegated | No | Read signed-in user's display name, email, and object ID |
+| `openid` | Microsoft Graph | Delegated | No | OpenID Connect sign-in (provides `id_token`) |
+| `profile` | Microsoft Graph | Delegated | No | Access user profile claims (name, preferred_username) |
+| `email` | Microsoft Graph | Delegated | No | Access user email address |
+| `offline_access` | Microsoft Graph | Delegated | No | Obtain refresh token for silent token renewal |
+| `RoleManagement.ReadWrite.Directory` | Microsoft Graph | Delegated | Yes | List and activate/deactivate Entra ID directory roles |
+| `PrivilegedAccess.ReadWrite.AzureADGroup` | Microsoft Graph | Delegated | Yes | List and activate/deactivate PIM-enabled group memberships |
+| `Policy.Read.All` | Microsoft Graph | Delegated | Yes | Read role policies (max duration, MFA, justification, ticket, approval) |
+| `AdministrativeUnit.Read.All` | Microsoft Graph | Delegated | Yes | Resolve Administrative Unit IDs to display names |
+| `AuditLog.Read.All` | Microsoft Graph | Delegated | Yes | Read Entra audit logs for activation history sync |
 
 #### Optional (for Azure Resource Roles)
 
 | Permission | API | Type | Admin Consent | Purpose |
 |-----------|-----|------|---------------|---------|
-| `user_impersonation` | Azure Service Management | Delegated | No | List eligible/active Azure PIM roles across subscriptions using `$filter=asTarget()`, submit SelfActivate/SelfDeactivate requests for Azure RBAC roles, and enumerate subscriptions. Only grants access within the user's existing Azure RBAC permissions. |
+| `user_impersonation` | Azure Service Management | Delegated | No | List and activate/deactivate Azure PIM roles across subscriptions |
 
-> **Note:** `user_impersonation` on Azure Service Management is classified as low-risk and does not require admin consent. It does not grant any elevated access — the app can only perform actions the signed-in user is already authorized for via their Azure RBAC assignments. Enable `INCLUDE_AZURE_RESOURCES=true` in `.env` to use this feature.
+> **Note:** `user_impersonation` on Azure Service Management does not require admin consent and does not grant elevated access. Enable `INCLUDE_AZURE_RESOURCES=true` in `.env` to use this feature.
 
 ## Docker Architecture
 
@@ -123,22 +122,20 @@ docker-compose.yml
   |
   +-- pim-app (container)
        |-- Pode HTTP/HTTPS server (port 8080)
-       |-- PowerShell 7 + .NET SDK Alpine
-       |-- curl (for Graph/Azure REST API calls)
+       |-- PowerShell 7 + .NET SDK 8.0 Alpine
+       |-- Invoke-WebRequest for all API calls
+       |
+       DNS: 8.8.8.8, 8.8.4.4 (Google DNS for reliable IPv4 resolution)
        |
        Volumes:
        |-- ./certs:/etc/pim-certs:ro     (TLS certificates)
        |-- ./config:/etc/pim-config:ro   (config files)
-       |-- pim-data:/var/pim-data        (persistent preferences)
+       |-- pim-data:/var/pim-data        (persistent preferences, profiles, history)
        |-- ./logs:/var/log/pim:rw        (log files)
        |
        Ports:
        |-- 443 -> 8080 (HTTPS, configurable via HTTPS_PORT)
 ```
-
-### Container Base Image
-
-`mcr.microsoft.com/dotnet/sdk:8.0-alpine` — includes PowerShell 7 and .NET runtime. The Pode module is installed during build.
 
 ## Configuration Reference
 
@@ -187,33 +184,15 @@ All configuration is done via the `.env` file. The container reads these at star
 | `THEME_FONT_FAMILY` | `Segoe UI, -apple-system, sans-serif` | Font family |
 | `APP_COPYRIGHT` | *(empty)* | Footer copyright text (hidden when empty) |
 
-## HTTPS Certificates
-
-Certificates are mounted from the host `./certs/` directory:
-
-```
-certs/
-  cert.pem    # Certificate chain (PEM)
-  key.pem     # Private key (PEM, no passphrase)
-```
-
-| Method | Command |
-|--------|---------|
-| **Self-signed** (dev) | `openssl req -x509 -newkey rsa:4096 -keyout certs/key.pem -out certs/cert.pem -days 365 -nodes -subj "/CN=localhost"` |
-| **Let's Encrypt** | Copy `fullchain.pem` and `privkey.pem` from certbot |
-| **Enterprise PFX** | `openssl pkcs12 -in cert.pfx -clcerts -nokeys -out certs/cert.pem` and `openssl pkcs12 -in cert.pfx -nocerts -nodes -out certs/key.pem` |
-
-If no certificates are found, the server falls back to HTTP automatically.
-
-See [CERTIFICATES.md](CERTIFICATES.md) for detailed instructions.
-
 ## Project Structure
 
 ```
-PIMActivation-Web/
-|-- Dockerfile                          # Container build
-|-- docker-compose.yml                  # Service orchestration
+PIMActivation/
+|-- Dockerfile                          # Container build (Alpine Linux)
+|-- docker-compose.yml                  # Service orchestration + DNS config
 |-- .env.example                        # Environment template
+|-- architecture.md                     # System architecture & ADRs
+|-- pode-onboarding.md                  # Pode framework onboarding guide
 |-- CERTIFICATES.md                     # HTTPS certificate guide
 |-- certs/                              # TLS certificates (mounted)
 |-- config/                             # Config files (mounted)
@@ -221,45 +200,48 @@ PIMActivation-Web/
 |-- src/pode-app/
     |-- pim-server.ps1                  # Pode server entry point
     |-- middleware/
-    |   +-- AuthMiddleware.ps1          # OAuth 2.0 flow, session management
+    |   +-- AuthMiddleware.ps1          # OAuth 2.0, sessions, SameSite cookies
     |-- modules/
     |   |-- Configuration.ps1           # Environment config reader
-    |   |-- Logger.ps1                  # Structured logging
-    |   +-- PIMApiLayer.ps1             # Graph & Azure REST API calls
+    |   |-- Logger.ps1                  # Structured JSON logging
+    |   +-- PIMApiLayer.ps1             # Graph & Azure API (Invoke-WebRequest)
     |-- routes/
-    |   |-- Config.ps1                  # Theme, features, preferences API
-    |   +-- Roles.ps1                   # Role CRUD API
+    |   |-- Config.ps1                  # Theme, features, preferences, profiles
+    |   +-- Roles.ps1                   # Role CRUD API + Entra audit history
     +-- public/
         |-- index.html                  # Single-page UI
-        |-- css/style.css               # Fluent Design CSS
+        |-- css/style.css               # Fluent Design CSS (light + dark)
         |-- images/                     # Logo, favicon
         +-- js/
-            |-- api-client.js           # HTTP client
-            |-- app.js                  # Theme, init
-            |-- auth.js                 # OAuth flow
-            |-- activation.js           # Activation dialog
-            +-- roles.js                # Role tables
+            |-- api-client.js           # HTTP client (cookie-based auth)
+            |-- app.js                  # App init, toast, progress bar, theme
+            |-- auth.js                 # OAuth flow UI
+            |-- roles.js                # Role tables, selection, deactivation
+            |-- activation.js           # Activation dialog, batch activation
+            |-- profiles.js             # Saved role profiles
+            +-- history.js              # Activation history & analytics
 ```
 
 ## Security
 
 - **OAuth 2.0 Authorization Code** flow with Entra ID
-- **HttpOnly + Secure** session cookies with SameSite
-- **Automatic token refresh** using refresh tokens
-- **Cryptographic session IDs** (48-byte random)
-- **Session cleanup timer** purges expired sessions every 5 minutes
+- **HttpOnly + Secure + SameSite=Lax** session cookies (via custom `Set-SecureCookie` for Pode 2.x compatibility)
+- **Security headers middleware** — HSTS, X-Frame-Options (DENY), X-Content-Type-Options (nosniff), Referrer-Policy, Permissions-Policy
+- **Automatic token refresh** using refresh tokens with single-retry on 401
+- **Cryptographic session IDs** (48-byte random, Base64url-safe)
+- **Session expiry enforcement** — checked on every protected request, not just timer
+- **Duration validation** — activation duration validated server-side (1-1440 minutes)
 - **Input validation** — role IDs validated as GUIDs
-- **Auth checks** on all protected API endpoints
-- **Generic error messages** to client, detailed errors logged server-side
-- **No secrets in logs** — tokens and OAuth details stripped from output
-- **HTTPS** with custom certificate support
+- **File permissions** — preference storage directory at 700 (owner-only)
+- **No tokens in process args** — uses `Invoke-WebRequest` (native PowerShell) instead of curl
+- **No temp files** — request bodies passed directly, never written to disk
 
 ## Troubleshooting
 
 ### Container won't start
 
 ```bash
-docker-compose logs --tail=30
+docker compose logs --tail=30
 ```
 
 ### Session expired errors
@@ -273,13 +255,11 @@ The Graph access token auto-refreshes via the refresh token. If refresh fails, s
 3. Check user preference: Settings > "Show Azure Resource roles"
 4. Sign out and back in to get a new Azure Management token
 
-### Roles not loading
+### Audit history not loading
 
-Check the container logs for Graph API errors:
-
-```bash
-docker-compose logs --tail=50 | grep -i "error\|failed"
-```
+1. Ensure `AuditLog.Read.All` permission is granted with admin consent
+2. Sign out and back in to get a token with the new scope
+3. Audit logs load in the background — check browser console for errors
 
 ### HTTPS certificate issues
 
@@ -291,10 +271,12 @@ openssl rsa -noout -modulus -in certs/key.pem | openssl md5
 
 Both MD5 values must match. See [CERTIFICATES.md](CERTIFICATES.md) for more.
 
-## Related
+## Documentation
 
-- [PIMActivation PowerShell Module](https://github.com/l-gosling/PIMActivation) - Original Windows Forms GUI version
-- [Pode](https://badgerati.github.io/Pode/) - PowerShell cross-platform web server
+- [Architecture & Decisions](architecture.md) — system design, module dependencies, ADRs, Mermaid diagrams
+- [Pode Onboarding](pode-onboarding.md) — Pode framework concepts mapped to standard PowerShell
+- [HTTPS Certificates](CERTIFICATES.md) — TLS setup guide
+- [Pode Framework](https://badgerati.github.io/Pode/) — official Pode documentation
 - [Microsoft Graph PIM API](https://learn.microsoft.com/en-us/graph/api/resources/privilegedidentitymanagementv3-overview)
 
 ## License

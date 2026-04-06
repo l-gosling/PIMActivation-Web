@@ -1,116 +1,119 @@
-# Pode-Einstieg für PowerShell-Entwickler
+# Pode Onboarding for PowerShell Developers
 
-Dieses Dokument erklärt das [Pode Web-Framework](https://badgerati.github.io/Pode/) anhand unserer PIM Activation Codebasis. Es richtet sich an Entwickler mit soliden PowerShell-Grundkenntnissen, die noch **keine Erfahrung mit Pode** haben.
+This document explains the [Pode web framework](https://badgerati.github.io/Pode/) using our PIM Activation codebase. It targets developers with solid PowerShell skills who have **no prior experience with Pode**.
 
-> **Ansatz:** Jedes Pode-Konzept wird zuerst auf ein bekanntes PowerShell-Äquivalent abgebildet, dann anhand konkreter Dateien im Repository demonstriert.
-> **Architektur-Details:** Für die Designentscheidungen hinter dieser Anwendung siehe [`architecture.md`](architecture.md).
-
----
-
-## 1. Was ist Pode und warum nutzen wir es?
-
-**Pode** ist ein leichtgewichtiges, in PowerShell geschriebenes Web-Framework. Es stellt einen HTTP-Server bereit, der Routen, statische Dateien, Timer und Middleware unterstützt — ohne IIS, Apache oder ASP.NET.
-
-**Vergleich:**
-- In **Node.js** ist Pode vergleichbar mit `http.createServer()` bzw. Express.
-- In **Python** entspricht es Flask oder FastAPI.
-- In **PowerShell** gibt es kein eingebautes Äquivalent — `Invoke-RestMethod` ist ein *Client*, Pode ist ein *Server*.
-
-**Warum Pode in diesem Projekt?**
-- Läuft nativ in PowerShell 7 — keine Kompilierung, kein Build-Step
-- Docker-freundlich (Alpine Linux, ~100 MB Image)
-- Alle Module bleiben reines PowerShell (`.ps1`-Dateien)
-- Thread-Pool für parallele Request-Verarbeitung eingebaut
+> **Approach:** Each Pode concept is first mapped to a familiar PowerShell equivalent, then demonstrated with concrete files from this repository.
+> **Architecture details:** For design decisions behind this application, see [`architecture.md`](architecture.md).
 
 ---
 
-## 2. Das mentale Modell: Pode vs. normales PowerShell-Skript
+## 1. What Is Pode and Why Do We Use It?
 
-### Standard-PowerShell
+**Pode** is a lightweight web framework written in PowerShell. It provides an HTTP server with routes, static files, timers, and middleware — without IIS, Apache, or ASP.NET.
 
-Ein normales Skript läuft **sequenziell** in einem einzigen Thread und endet, wenn die letzte Zeile erreicht ist:
+**Comparisons:**
+- In **Node.js**, Pode is comparable to `http.createServer()` or Express.
+- In **Python**, it corresponds to Flask or FastAPI.
+- In **PowerShell**, there is no built-in equivalent — `Invoke-RestMethod` is a *client*, Pode is a *server*.
+
+**Why Pode in this project?**
+- Runs natively in PowerShell 7 — no compilation, no build step
+- Docker-friendly (Alpine Linux, ~100 MB image)
+- All modules remain pure PowerShell (`.ps1` files)
+- Built-in thread pool for parallel request handling
+
+---
+
+## 2. The Mental Model: Pode vs. a Normal PowerShell Script
+
+### Standard PowerShell
+
+A normal script runs **sequentially** in a single thread and exits when the last line is reached:
 
 ```powershell
-# Standard-Skript: ein Thread, läuft durch, endet
-$data = Get-Content './daten.json' | ConvertFrom-Json
+# Standard script: one thread, runs through, ends
+$data = Get-Content './data.json' | ConvertFrom-Json
 $data | ForEach-Object { Write-Output $_.Name }
-# Skript ist fertig → Prozess endet
+# Script finished → process exits
 ```
 
 ### Pode
 
-Ein Pode-Server startet und **wartet endlos** auf eingehende HTTP-Requests. Mehrere Requests werden **parallel** in einem Thread-Pool verarbeitet:
+A Pode server starts and **waits indefinitely** for incoming HTTP requests. Multiple requests are processed **in parallel** in a thread pool:
 
 ```mermaid
 graph LR
-    subgraph "Standard-PowerShell"
+    subgraph "Standard PowerShell"
         direction TB
-        A["Skript startet"] --> B["Zeile 1"] --> C["Zeile 2"] --> D["Skript endet"]
+        A["Script starts"] --> B["Line 1"] --> C["Line 2"] --> D["Script ends"]
     end
 
-    subgraph "Pode-Server"
+    subgraph "Pode Server"
         direction TB
-        M["Main-Thread<br/>pim-server.ps1"]
+        M["Main Thread<br/>pim-server.ps1"]
         M --> W1["Worker 1<br/>(Runspace)"]
         M --> W2["Worker 2<br/>(Runspace)"]
         M --> W3["Worker 3<br/>(Runspace)"]
         M --> W4["Worker 4<br/>(Runspace)"]
         M --> W5["Worker 5<br/>(Runspace)"]
-        M --> T["Timer-Thread<br/>(Runspace)"]
+        M --> T["Timer Thread<br/>(Runspace)"]
 
-        W1 -.->|"wartet auf<br/>Request"| W1
-        W2 -.->|"wartet auf<br/>Request"| W2
+        W1 -.->|"waiting for<br/>request"| W1
+        W2 -.->|"waiting for<br/>request"| W2
     end
 ```
 
-**Das ist der zentrale Unterschied:** Ein Pode-Server ist ein Endlos-Prozess mit mehreren parallelen Threads. Jeder Thread ist ein eigener **Runspace** — ein isolierter PowerShell-Ausführungskontext mit eigenem Variablen-Scope.
+**This is the key difference:** A Pode server is a long-running process with multiple parallel threads. Each thread is its own **runspace** — an isolated PowerShell execution context with its own variable scope.
 
-> **In unserem Repo:** `pim-server.ps1:55` startet den Server mit 5 Worker-Threads:
+> **In our repo:** `pim-server.ps1` starts the server with 5 worker threads:
 > ```powershell
 > Start-PodeServer -Name 'PIM-Activation' -Threads 5 {
->     # Alles in diesem Block = Server-Konfiguration
+>     # Everything in this block = server configuration
 > }
 > ```
 
 ---
 
-## 3. Server starten: `Start-PodeServer` verstehen
+## 3. Starting the Server: Understanding `Start-PodeServer`
 
-`Start-PodeServer` nimmt einen **ScriptBlock** entgegen. Dieser Block wird **nicht sofort ausgeführt** — er definiert, *was der Server tun soll*, wenn er läuft.
+`Start-PodeServer` takes a **ScriptBlock**. This block is **not executed immediately** — it defines *what the server should do* when running.
 
-**PowerShell-Analogie:** Der ScriptBlock ist vergleichbar mit `Register-EngineEvent` — er beschreibt das Verhalten, das bei bestimmten Events ausgelöst wird.
+**PowerShell analogy:** The ScriptBlock is comparable to `Register-EngineEvent` — it describes behavior triggered by events.
 
-### Was passiert in unserem Server-Block?
+### What Happens in Our Server Block?
 
 ```powershell
-# pim-server.ps1:55
+# pim-server.ps1
 Start-PodeServer -Name 'PIM-Activation' -Threads 5 {
-    # 1. Endpunkt konfigurieren (HTTP oder HTTPS)
-    Add-PodeEndpoint -Address * -Port $serverPort -Protocol Http    # Zeile 67
+    # 1. Configure endpoint (HTTP or HTTPS)
+    Add-PodeEndpoint -Address * -Port $serverPort -Protocol Http
 
-    # 2. Skripte in Worker-Runspaces laden
-    Use-PodeScript -Path '...'                                      # Zeilen 72-77
+    # 2. Security headers middleware
+    Add-PodeMiddleware -Name 'SecurityHeaders' -ScriptBlock { ... }
 
-    # 3. Shared State initialisieren
-    Set-PodeState -Name 'AuthSessions' -Value @{} | Out-Null       # Zeile 80
+    # 3. Load scripts into worker runspaces
+    Use-PodeScript -Path '...'
 
-    # 4. Timer registrieren
-    Add-PodeTimer -Name 'SessionCleanup' -Interval 300 ...         # Zeile 83
+    # 4. Initialize shared state
+    Set-PodeState -Name 'AuthSessions' -Value @{} | Out-Null
 
-    # 5. Routen registrieren
-    Add-PodeRoute -Method Get -Path '/api/health' -ScriptBlock ...  # Zeilen 91-157
+    # 5. Register timer
+    Add-PodeTimer -Name 'SessionCleanup' -Interval 300 ...
 
-    # 6. Statische Dateien konfigurieren
-    Add-PodeStaticRoute -Path '/' -Source $publicPath ...           # Zeile 157
+    # 6. Register routes
+    Add-PodeRoute -Method Get -Path '/api/health' -ScriptBlock ...
+
+    # 7. Configure static files
+    Add-PodeStaticRoute -Path '/' -Source $publicPath ...
 }
 ```
 
-### Endpunkt-Konfiguration
+### Endpoint Configuration
 
-Der Server entscheidet zur Laufzeit, ob er HTTPS oder HTTP verwendet:
+The server decides at runtime whether to use HTTPS or HTTP:
 
 ```powershell
-# pim-server.ps1:62-69
+# pim-server.ps1 — inside the server block
 if ((Test-Path $certPath) -and (Test-Path $keyPath)) {
     Add-PodeEndpoint -Address * -Port $serverPort -Protocol Https `
         -Certificate $certPath -CertificateKey $keyPath
@@ -120,208 +123,206 @@ else {
 }
 ```
 
-`-Address *` bedeutet: auf allen Netzwerk-Interfaces lauschen (wie `0.0.0.0` in anderen Frameworks).
+`-Address *` means: listen on all network interfaces (like `0.0.0.0` in other frameworks).
 
 ---
 
-## 4. Routen registrieren: `Add-PodeRoute`
+## 4. Registering Routes: `Add-PodeRoute`
 
-### Grundsyntax
+### Basic Syntax
 
 ```powershell
 Add-PodeRoute -Method Get -Path '/api/health' -ScriptBlock {
-    # Dieser Code läuft in einem Worker-Thread, wenn ein GET /api/health kommt
+    # This code runs in a worker thread when GET /api/health arrives
     Write-PodeJsonResponse -Value @{ status = 'healthy' }
 }
 ```
 
-### Die magische Variable: `$WebEvent`
+### The Magic Variable: `$WebEvent`
 
-In jedem Route-ScriptBlock stellt Pode automatisch die Variable `$WebEvent` bereit. Sie enthält alle Informationen über den eingehenden Request.
+In every route ScriptBlock, Pode automatically provides the `$WebEvent` variable. It contains all information about the incoming request.
 
-**PowerShell-Analogie:** `$WebEvent` ist wie `$_` (`$PSItem`) in einer Pipeline — eine automatische Variable, die der aktuelle Kontext bereitstellt.
+**PowerShell analogy:** `$WebEvent` is like `$_` (`$PSItem`) in a pipeline — an automatic variable provided by the current context.
 
-| `$WebEvent`-Eigenschaft | Beschreibung | Beispiel |
-|--------------------------|-------------|---------|
-| `$WebEvent.Query` | URL-Query-Parameter | `$WebEvent.Query['code']` in `AuthMiddleware.ps1:253` |
-| `$WebEvent.Data` | Geparster JSON-Body (POST) | `$WebEvent.Data.roleId` in `Roles.ps1:111` |
-| `$WebEvent.Parameters` | Pfad-Parameter (`:param`) | `$WebEvent.Parameters.roleId` in `pim-server.ps1:134` |
-| `$WebEvent.Request` | Das rohe Request-Objekt | Weitergereicht an Handler-Funktionen |
+| `$WebEvent` Property | Description | Example |
+|----------------------|-------------|---------|
+| `$WebEvent.Query` | URL query parameters | `$WebEvent.Query['code']` in `AuthMiddleware.ps1` (`Invoke-AuthCallback`) |
+| `$WebEvent.Data` | Parsed JSON body (POST) | `$WebEvent.Data.roleId` in `Roles.ps1` (`Invoke-ActivateRole`) |
+| `$WebEvent.Parameters` | Path parameters (`:param`) | `$WebEvent.Parameters.roleId` in `pim-server.ps1` (policies route) |
+| `$WebEvent.Request` | The raw request object | Passed to handler functions |
 
-### Unser Muster: Route → Handler-Funktion
+### Our Pattern: Route → Handler Function
 
-Statt die gesamte Logik in den ScriptBlock zu schreiben, rufen unsere Routen benannte Funktionen auf:
+Instead of putting all logic in the ScriptBlock, our routes call named functions:
 
 ```powershell
-# pim-server.ps1:117-119
+# pim-server.ps1
 Add-PodeRoute -Method Get -Path '/api/roles/eligible' -ScriptBlock {
     Invoke-GetEligibleRoles -Request $WebEvent.Request
 }
 ```
 
-Die eigentliche Logik steckt in `Invoke-GetEligibleRoles` (`routes/Roles.ps1:42`). Dieser Ansatz hält die Route-Registrierung übersichtlich und die Handler-Logik testbar.
+The actual logic lives in `Invoke-GetEligibleRoles` (`routes/Roles.ps1`). This keeps route registration clean and handler logic testable.
 
-### Request-Verarbeitung im Detail
+### Request Processing Flow
 
 ```mermaid
 flowchart TD
-    A["HTTP-Request kommt an"] --> B["Pode wählt freien<br/>Worker-Thread"]
-    B --> C["ScriptBlock wird<br/>im Thread ausgeführt"]
-    C --> D["$WebEvent steht<br/>zur Verfügung"]
-    D --> E["Handler-Funktion<br/>aufgerufen"]
-    E --> F{"Auth nötig?"}
-    F -->|"Ja"| G["Assert-AuthenticatedSession()<br/>(AuthMiddleware.ps1:198)"]
-    G --> H{"Session gültig?"}
-    H -->|"Nein"| I["Write-PodeJsonResponse<br/>401 Unauthorized"]
-    H -->|"Ja"| J["Fachlogik ausführen<br/>(PIMApiLayer.ps1)"]
-    F -->|"Nein"| J
-    J --> K["Write-PodeJsonResponse<br/>200 OK"]
-    I --> L["Thread wird freigegeben"]
-    K --> L
+    A["HTTP request arrives"] --> B["Pode picks a free<br/>worker thread"]
+    B --> C["SecurityHeaders middleware<br/>adds response headers"]
+    C --> D["ScriptBlock executes<br/>in the thread"]
+    D --> E["$WebEvent available"]
+    E --> F["Handler function called"]
+    F --> G{"Auth required?"}
+    G -->|"Yes"| H["Assert-AuthenticatedSession()<br/>(AuthMiddleware.ps1)"]
+    H --> I{"Session valid<br/>and not expired?"}
+    I -->|"No"| J["Write-PodeJsonResponse<br/>401 Unauthorized"]
+    I -->|"Yes"| K["Execute business logic<br/>(PIMApiLayer.ps1)"]
+    G -->|"No"| K
+    K --> L["Write-PodeJsonResponse<br/>200 OK"]
+    J --> M["Thread released"]
+    L --> M
 ```
 
-### Route mit Pfad-Parametern
+### Routes with Path Parameters
 
-Pode unterstützt dynamische Pfad-Segmente mit `:parameter`:
+Pode supports dynamic path segments with `:parameter`:
 
 ```powershell
-# pim-server.ps1:133-135
+# pim-server.ps1
 Add-PodeRoute -Method Get -Path '/api/roles/policies/:roleId' -ScriptBlock {
     Invoke-GetRolePolicies -Request $WebEvent.Request -RoleId $WebEvent.Parameters.roleId
 }
 ```
 
-`:roleId` wird aus der URL extrahiert und steht als `$WebEvent.Parameters.roleId` zur Verfügung. Vergleichbar mit `$Matches` nach einem Regex-Match.
+`:roleId` is extracted from the URL and available as `$WebEvent.Parameters.roleId`. Comparable to `$Matches` after a regex match.
 
 ---
 
-## 5. Funktionen in Routen verfügbar machen: `Use-PodeScript`
+## 5. Making Functions Available in Routes: `Use-PodeScript`
 
-### Das Problem
+### The Problem
 
-Route-ScriptBlocks laufen in **eigenen Runspaces** (Worker-Threads). Funktionen, die im Hauptskript definiert sind, existieren dort **nicht**.
+Route ScriptBlocks run in **their own runspaces** (worker threads). Functions defined in the main script **don't exist** there.
 
 ```powershell
-# Das funktioniert NICHT:
-function Get-Greeting { return "Hallo" }
+# This does NOT work:
+function Get-Greeting { return "Hello" }
 
 Start-PodeServer {
     Add-PodeRoute -Method Get -Path '/greet' -ScriptBlock {
-        $msg = Get-Greeting   # FEHLER: Funktion existiert in diesem Runspace nicht!
+        $msg = Get-Greeting   # ERROR: function doesn't exist in this runspace!
         Write-PodeJsonResponse -Value @{ message = $msg }
     }
 }
 ```
 
-**PowerShell-Analogie:** Das gleiche Problem tritt bei `ForEach-Object -Parallel` auf:
+**PowerShell analogy:** The same problem occurs with `ForEach-Object -Parallel`:
 
 ```powershell
-function Get-Greeting { return "Hallo" }
+function Get-Greeting { return "Hello" }
 
 1..5 | ForEach-Object -Parallel {
-    Get-Greeting   # FEHLER: Funktion existiert im Parallel-Runspace nicht!
+    Get-Greeting   # ERROR: function doesn't exist in the parallel runspace!
 }
 ```
 
-### Die Lösung: `Use-PodeScript`
+### The Solution: `Use-PodeScript`
 
-`Use-PodeScript` importiert eine Skriptdatei in **alle** Worker-Runspaces:
+`Use-PodeScript` imports a script file into **all** worker runspaces:
 
 ```powershell
 Start-PodeServer {
-    Use-PodeScript -Path './modules/Logger.ps1'   # Funktionen in allen Threads verfügbar
+    Use-PodeScript -Path './modules/Logger.ps1'   # Functions available in all threads
 
     Add-PodeRoute -Method Get -Path '/log' -ScriptBlock {
-        Write-Log -Message "Request erhalten"       # Funktioniert jetzt!
+        Write-Log -Message "Request received"       # Works now!
     }
 }
 ```
 
-**PowerShell-Analogie:** `Use-PodeScript` ist wie `Import-Module` in jedem Runspace eines `ForEach-Object -Parallel`-Blocks.
+**PowerShell analogy:** `Use-PodeScript` is like `Import-Module` in every runspace of a `ForEach-Object -Parallel` block.
 
-### Warum wir doppelt laden
+### Why We Load Twice
 
-In unserem Projekt werden alle Skripte **zweimal** importiert:
+In our project, all scripts are imported **twice**:
 
 ```powershell
 # pim-server.ps1
 
-# ERSTER Import: Dot-Sourcing im Hauptskript (Zeilen 41-46)
-. (Join-Path $ModulePath 'Logger.ps1')        # Für Initialize-Logger VOR Serverstart
+# FIRST import: dot-sourcing in the main script
+. (Join-Path $ModulePath 'Logger.ps1')        # For Initialize-Logger BEFORE server start
 . (Join-Path $ModulePath 'Configuration.ps1')
-. (Join-Path $ModulePath 'PIMApiLayer.ps1')
-. (Join-Path $MiddlewarePath 'AuthMiddleware.ps1')
-. (Join-Path $RoutesPath 'Roles.ps1')
-. (Join-Path $RoutesPath 'Config.ps1')
+# ...
 
-Initialize-Logger -Level $LogLevel -Path '/var/log/pim/pode.log'  # Zeile 49
-Write-Log -Message "Starting..."                                   # Zeile 51
+Initialize-Logger -Level $LogLevel -Path '/var/log/pim/pode.log'
+Write-Log -Message "Starting..."
 
 Start-PodeServer -Threads 5 {
-    # ZWEITER Import: Use-PodeScript für Worker-Threads (Zeilen 72-77)
+    # SECOND import: Use-PodeScript for worker threads
     Use-PodeScript -Path (Join-Path $PSScriptRoot 'modules' 'Logger.ps1')
     Use-PodeScript -Path (Join-Path $PSScriptRoot 'modules' 'Configuration.ps1')
     # ...
 }
 ```
 
-| Import | Methode | Zweck | Scope |
-|--------|---------|-------|-------|
-| Erster | Dot-Sourcing (`. ./datei.ps1`) | Funktionen für **Initialisierung** verfügbar machen | Main-Thread |
-| Zweiter | `Use-PodeScript` | Funktionen für **Route-Handler** verfügbar machen | Worker-Threads |
+| Import | Method | Purpose | Scope |
+|--------|--------|---------|-------|
+| First | Dot-sourcing (`. ./file.ps1`) | Functions available for **initialization** | Main thread |
+| Second | `Use-PodeScript` | Functions available for **route handlers** | Worker threads |
 
-Ohne den ersten Import könnte `Initialize-Logger` (Zeile 49) nicht aufgerufen werden, weil `Start-PodeServer` noch nicht gestartet ist. Ohne den zweiten Import hätten die Route-Handler keinen Zugriff auf `Write-Log`, `Get-AuthSession`, etc.
+Without the first import, `Initialize-Logger` couldn't be called because `Start-PodeServer` hasn't started yet. Without the second import, route handlers would have no access to `Write-Log`, `Get-AuthSession`, etc.
 
 ---
 
-## 6. Shared State: Daten zwischen Threads teilen
+## 6. Shared State: Sharing Data Between Threads
 
-### Das Problem
+### The Problem
 
-Jeder Worker-Thread hat seinen eigenen Variablen-Scope. Eine Variable, die in Thread 1 gesetzt wird, ist in Thread 2 unsichtbar:
+Each worker thread has its own variable scope. A variable set in thread 1 is invisible in thread 2:
 
 ```powershell
-# Das funktioniert NICHT:
-$sessions = @{}   # Nur im Main-Thread sichtbar
+# This does NOT work:
+$sessions = @{}   # Only visible in the main thread
 
 Start-PodeServer {
     Add-PodeRoute -Method Get -Path '/test' -ScriptBlock {
-        $sessions['key'] = 'value'   # $sessions existiert hier nicht!
+        $sessions['key'] = 'value'   # $sessions doesn't exist here!
     }
 }
 ```
 
-**PowerShell-Analogie:** Dasselbe Problem wie bei `ForEach-Object -Parallel`, wo man `$using:` braucht:
+**PowerShell analogy:** Same problem as with `ForEach-Object -Parallel`, where you need `$using:`:
 
 ```powershell
 $sharedData = [hashtable]::Synchronized(@{})
 1..5 | ForEach-Object -Parallel {
-    ($using:sharedData)['key'] = 'value'   # $using: nötig für Zugriff
+    ($using:sharedData)['key'] = 'value'   # $using: needed for access
 }
 ```
 
-### Die Lösung: `Set-PodeState` / `Get-PodeState`
+### The Solution: `Set-PodeState` / `Get-PodeState`
 
-Pode bietet einen eingebauten Mechanismus für geteilte Daten:
+Pode provides a built-in mechanism for shared data:
 
 ```powershell
-# Initialisierung (einmalig im Server-Block)
-Set-PodeState -Name 'AuthSessions' -Value @{} | Out-Null   # pim-server.ps1:80
+# Initialization (once in the server block)
+Set-PodeState -Name 'AuthSessions' -Value @{} | Out-Null   # pim-server.ps1
 
-# Lesen (aus jedem Thread)
-$sessions = Get-PodeState -Name 'AuthSessions'              # AuthMiddleware.ps1:47
+# Reading (from any thread)
+$sessions = Get-PodeState -Name 'AuthSessions'              # AuthMiddleware.ps1
 
-# Schreiben (mit Lock für Thread-Sicherheit)
+# Writing (with lock for thread safety)
 Lock-PodeObject -Object (Get-PodeState -Name 'AuthSessions') -ScriptBlock {
     $sessions = Get-PodeState -Name 'AuthSessions'
     $sessions[$SessionId] = $Data
     Set-PodeState -Name 'AuthSessions' -Value $sessions | Out-Null
-}   # AuthMiddleware.ps1:65-78
+}   # AuthMiddleware.ps1 — Set-AuthSession
 ```
 
-### Thread-Sicherheit mit `Lock-PodeObject`
+### Thread Safety with `Lock-PodeObject`
 
-Wenn mehrere Threads gleichzeitig denselben State schreiben, entstehen **Race Conditions**. `Lock-PodeObject` verhindert das:
+When multiple threads write to the same state simultaneously, **race conditions** occur. `Lock-PodeObject` prevents this:
 
 ```mermaid
 graph TB
@@ -329,128 +330,129 @@ graph TB
         State[("AuthSessions<br/>(Hashtable)")]
     end
 
-    subgraph "Worker-Threads"
-        W1["Thread 1<br/>Get-PodeState<br/>(Lesen, kein Lock)"]
-        W2["Thread 2<br/>Get-PodeState<br/>(Lesen, kein Lock)"]
-        W3["Thread 3<br/>Lock-PodeObject →<br/>Set-PodeState<br/>(Schreiben, mit Lock)"]
+    subgraph "Worker Threads"
+        W1["Thread 1<br/>Get-PodeState<br/>(read, no lock)"]
+        W2["Thread 2<br/>Get-PodeState<br/>(read, no lock)"]
+        W3["Thread 3<br/>Lock-PodeObject -><br/>Set-PodeState<br/>(write, with lock)"]
     end
 
-    subgraph "Timer-Thread"
-        T["SessionCleanup<br/>Lock-PodeObject →<br/>Clear-ExpiredAuthSessions"]
+    subgraph "Timer Thread"
+        T["SessionCleanup<br/>Lock-PodeObject -><br/>Clear-ExpiredAuthSessions"]
     end
 
-    W1 -->|"lesen"| State
-    W2 -->|"lesen"| State
-    W3 -->|"schreiben (Lock)"| State
-    T -->|"bereinigen (Lock)"| State
+    W1 -->|"read"| State
+    W2 -->|"read"| State
+    W3 -->|"write (lock)"| State
+    T -->|"cleanup (lock)"| State
 ```
 
-**PowerShell-Analogie:** `Lock-PodeObject` entspricht `[System.Threading.Monitor]::Enter()` / `Exit()` — es stellt sicher, dass nur ein Thread gleichzeitig den geschützten Bereich betritt.
+**PowerShell analogy:** `Lock-PodeObject` corresponds to `[System.Threading.Monitor]::Enter()` / `Exit()` — it ensures only one thread enters the protected region at a time.
 
-### Konkrete Funktionen in unserem Repo
+### Functions in Our Repo
 
-| Funktion | Datei | Lock? | Operation |
-|----------|-------|-------|-----------|
-| `Get-AuthSession` | `AuthMiddleware.ps1:38` | Nein | Liest eine Session aus dem State |
-| `Set-AuthSession` | `AuthMiddleware.ps1:61` | Ja | Erstellt/aktualisiert eine Session |
-| `Remove-AuthSession` | `AuthMiddleware.ps1:86` | Ja | Löscht eine Session |
-| `Clear-ExpiredAuthSessions` | `AuthMiddleware.ps1:105` | Ja | Entfernt abgelaufene Sessions |
+| Function | File | Lock? | Operation |
+|----------|------|-------|-----------|
+| `Get-AuthSession` | `AuthMiddleware.ps1` | No | Reads a session from state |
+| `Set-AuthSession` | `AuthMiddleware.ps1` | Yes | Creates/updates a session |
+| `Remove-AuthSession` | `AuthMiddleware.ps1` | Yes | Deletes a session |
+| `Clear-ExpiredAuthSessions` | `AuthMiddleware.ps1` | Yes | Removes expired sessions |
 
 ---
 
 ## 7. Cookies: `Set-PodeCookie` / `Get-PodeCookie`
 
-Pode verwaltet HTTP-Cookies als First-Class-Konzept. Keine manuelle Header-Manipulation nötig.
+Pode manages HTTP cookies as a first-class concept. No manual header manipulation needed.
 
-### Cookie setzen
+### Setting a Cookie
 
 ```powershell
-# AuthMiddleware.ps1:351-353
-Set-PodeCookie -Name 'pim_session' `
+# AuthMiddleware.ps1 — Set-SecureCookie (custom wrapper for SameSite support)
+Set-SecureCookie -Name 'pim_session' `
     -Value $sessionId `
     -ExpiryDate ([datetime]::UtcNow.AddSeconds($sessionTimeout)) `
-    -HttpOnly `            # JavaScript kann den Cookie nicht lesen (XSS-Schutz)
-    -Secure:$isHttps       # Nur über HTTPS senden (dynamisch)
+    -HttpOnly `            # JavaScript cannot read the cookie (XSS protection)
+    -Secure:$isHttps `     # Only send over HTTPS (dynamic)
+    -SameSite 'Lax'        # CSRF protection
 ```
 
-### Cookie lesen
+### Reading a Cookie
 
 ```powershell
 $cookie = Get-PodeCookie -Name 'pim_session'
 ```
 
-> **Hinweis:** `Get-PodeCookie` gibt je nach Pode-Version ein Hashtable oder einen String zurück. Deshalb existiert in unserem Repo der Wrapper `Get-CookieValue` (`AuthMiddleware.ps1:153`), der das Ergebnis normalisiert.
+> **Note:** `Get-PodeCookie` returns either a hashtable or string depending on the Pode version. That's why our repo has the `Get-CookieValue` wrapper (`AuthMiddleware.ps1`) that normalizes the result.
 
-### Cookie löschen
+### Deleting a Cookie
 
 ```powershell
-Remove-PodeCookie -Name 'oauth_state'   # AuthMiddleware.ps1:354
+Remove-PodeCookie -Name 'oauth_state'   # AuthMiddleware.ps1
 ```
 
-### Cookie-Lebenszyklus in unserer App
+### Cookie Lifecycle in Our App
 
-1. **Login:** `oauth_state`-Cookie gesetzt (10 Minuten gültig, CSRF-Schutz)
-2. **Callback:** `oauth_state` gelöscht, `pim_session`-Cookie gesetzt (1 Stunde gültig)
-3. **Requests:** Browser sendet `pim_session` automatisch mit jedem Request
-4. **Logout:** `pim_session`-Cookie gelöscht (Server + Client)
+1. **Login:** `oauth_state` cookie set (10 minutes, CSRF protection)
+2. **Callback:** `oauth_state` deleted, `pim_session` cookie set (1 hour)
+3. **Requests:** Browser sends `pim_session` automatically with every request
+4. **Logout:** `pim_session` cookie deleted (server + client)
 
 ---
 
-## 8. Antworten senden
+## 8. Sending Responses
 
-### JSON-Antworten: `Write-PodeJsonResponse`
+### JSON Responses: `Write-PodeJsonResponse`
 
-Die am häufigsten verwendete Funktion in unserem Projekt. Serialisiert ein PowerShell-Objekt zu JSON und sendet es als HTTP-Response.
+The most frequently used function in our project. Serializes a PowerShell object to JSON and sends it as an HTTP response.
 
 ```powershell
-# Erfolgreiche Antwort (200 ist Standard)
+# Success response (200 is default)
 Write-PodeJsonResponse -Value @{
     success = $true
     roles   = @($allRoles)
 }
 
-# Fehler-Antwort mit Status-Code
+# Error response with status code
 Write-PodeJsonResponse -Value @{
     success = $false
     error   = 'Not authenticated'
 } -StatusCode 401
 ```
 
-**PowerShell-Analogie:** `ConvertTo-Json | Write-Output`, aber Pode setzt automatisch den `Content-Type: application/json`-Header und den HTTP-Statuscode.
+**PowerShell analogy:** `ConvertTo-Json | Write-Output`, but Pode automatically sets the `Content-Type: application/json` header and HTTP status code.
 
 ### Redirects: `Move-PodeResponseUrl`
 
-Sendet eine HTTP 302-Weiterleitung:
+Sends an HTTP 302 redirect:
 
 ```powershell
-# AuthMiddleware.ps1:235 — Nach erfolgreichem Login
+# AuthMiddleware.ps1 — after successful login
 Move-PodeResponseUrl -Url '/'
 
-# AuthMiddleware.ps1:257 — Weiterleitung zu Entra ID
+# AuthMiddleware.ps1 — redirect to Entra ID
 Move-PodeResponseUrl -Url "$($oauth.AuthorizeUrl)?$($query.ToString())"
 ```
 
-**Wann verwendet?** Ausschließlich im OAuth-Flow: Login-Redirect zu Entra ID, und Redirect zurück zur App nach dem Callback.
+**When used?** Exclusively in the OAuth flow: login redirect to Entra ID, and redirect back to the app after the callback.
 
 ---
 
-## 9. Timer: Wiederkehrende Aufgaben
+## 9. Timers: Recurring Tasks
 
-`Add-PodeTimer` registriert eine Funktion, die in regelmäßigen Abständen ausgeführt wird — in einem **eigenen Thread**, unabhängig von Requests.
+`Add-PodeTimer` registers a function that runs at regular intervals — in its **own thread**, independent of requests.
 
 ```powershell
-# pim-server.ps1:83-85
+# pim-server.ps1
 Add-PodeTimer -Name 'SessionCleanup' -Interval 300 -ScriptBlock {
     Clear-ExpiredAuthSessions
 }
 ```
 
-Das bedeutet: Alle 300 Sekunden (5 Minuten) ruft Pode `Clear-ExpiredAuthSessions` auf, um abgelaufene Sessions aus dem Shared State zu entfernen.
+This means: every 300 seconds (5 minutes), Pode calls `Clear-ExpiredAuthSessions` to remove expired sessions from shared state.
 
-**PowerShell-Analogie:** Vergleichbar mit `Register-ObjectEvent` auf einem `System.Timers.Timer`:
+**PowerShell analogy:** Comparable to `Register-ObjectEvent` on a `System.Timers.Timer`:
 
 ```powershell
-# Standard-PowerShell-Äquivalent (konzeptionell):
+# Standard PowerShell equivalent (conceptual):
 $timer = New-Object System.Timers.Timer(300000)
 Register-ObjectEvent -InputObject $timer -EventName Elapsed -Action {
     Clear-ExpiredAuthSessions
@@ -458,61 +460,84 @@ Register-ObjectEvent -InputObject $timer -EventName Elapsed -Action {
 $timer.Start()
 ```
 
-Pode abstrahiert das und kümmert sich um Thread-Management und Error-Handling.
+Pode abstracts this and handles thread management and error handling.
 
 ---
 
-## 10. Statische Dateien: `Add-PodeStaticRoute`
+## 10. Static Files: `Add-PodeStaticRoute`
 
-Pode kann CSS, JavaScript, Bilder und HTML direkt ausliefern — kein separater Nginx oder Apache nötig.
+Pode can serve CSS, JavaScript, images, and HTML directly — no separate Nginx or Apache needed.
 
 ```powershell
-# pim-server.ps1:156-158
+# pim-server.ps1
 if (Test-Path $publicPath) {
     Add-PodeStaticRoute -Path '/' -Source $publicPath -Defaults @('index.html')
 }
 ```
 
-| Parameter | Wert | Bedeutung |
-|-----------|------|-----------|
-| `-Path '/'` | `/` | URL-Präfix, unter dem die Dateien erreichbar sind |
-| `-Source $publicPath` | `./public` | Lokales Verzeichnis mit den Dateien |
-| `-Defaults @('index.html')` | `index.html` | Standarddatei, wenn nur das Verzeichnis aufgerufen wird |
+| Parameter | Value | Meaning |
+|-----------|-------|---------|
+| `-Path '/'` | `/` | URL prefix under which files are accessible |
+| `-Source $publicPath` | `./public` | Local directory containing the files |
+| `-Defaults @('index.html')` | `index.html` | Default file served when accessing directory paths |
 
-**Ergebnis:**
+**Result:**
 - `GET /` → `public/index.html`
 - `GET /css/style.css` → `public/css/style.css`
 - `GET /js/app.js` → `public/js/app.js`
 
-Die API-Routen (`/api/*`) haben Vorrang vor statischen Dateien, weil sie explizit mit `Add-PodeRoute` registriert sind.
+API routes (`/api/*`) take precedence over static files because they are explicitly registered with `Add-PodeRoute`.
 
 ---
 
-## 11. Zusammenfassung: Pode-Konzepte auf einen Blick
+## 11. Middleware: `Add-PodeMiddleware`
 
-| Pode-Konzept | Standard-PowerShell-Analogie | Beispiel im Repo |
+Middleware runs **before** every route handler. Our app uses it for security headers:
+
+```powershell
+# pim-server.ps1
+Add-PodeMiddleware -Name 'SecurityHeaders' -ScriptBlock {
+    Add-PodeHeader -Name 'X-Content-Type-Options' -Value 'nosniff'
+    Add-PodeHeader -Name 'X-Frame-Options' -Value 'DENY'
+    Add-PodeHeader -Name 'Referrer-Policy' -Value 'strict-origin-when-cross-origin'
+    Add-PodeHeader -Name 'Permissions-Policy' -Value 'camera=(), microphone=(), geolocation=()'
+    if ($WebEvent.Request.Url.Scheme -eq 'https') {
+        Add-PodeHeader -Name 'Strict-Transport-Security' -Value 'max-age=31536000; includeSubDomains'
+    }
+    return $true   # Continue to the route handler
+}
+```
+
+Returning `$true` means "continue processing". Returning `$false` would stop the request (useful for auth middleware, though we handle auth per-route instead).
+
+---
+
+## 12. Summary: Pode Concepts at a Glance
+
+| Pode Concept | Standard PowerShell Analogy | Example in Repo |
 |---|---|---|
-| `Start-PodeServer -Threads 5` | `ForEach-Object -Parallel -ThrottleLimit 5` (Endlos-Schleife) | `pim-server.ps1:55` |
-| `Add-PodeEndpoint` | `[System.Net.HttpListener]::new()` | `pim-server.ps1:63/67` |
-| `Add-PodeRoute` | `Register-EngineEvent` mit HTTP-Trigger | `pim-server.ps1:91-153` |
-| `$WebEvent` | `$_` / `$PSItem` in Pipeline-Blöcken | `routes/Roles.ps1:111` |
-| `$WebEvent.Data` | Geparster JSON-Body | `routes/Roles.ps1:111` |
-| `$WebEvent.Parameters` | `$Matches` nach Regex-Match | `pim-server.ps1:134` |
-| `Use-PodeScript` | `Import-Module` in jedem Parallel-Runspace | `pim-server.ps1:72-77` |
-| `Set-PodeState` / `Get-PodeState` | `$using:hashTable` in `ForEach-Object -Parallel` | `pim-server.ps1:80`, `AuthMiddleware.ps1:47` |
-| `Lock-PodeObject` | `[Threading.Monitor]::Enter()` / `Exit()` | `AuthMiddleware.ps1:65` |
-| `Write-PodeJsonResponse` | `ConvertTo-Json \| Write-Output` + HTTP-Header | `routes/Roles.ps1:56` |
-| `Move-PodeResponseUrl` | Manueller `Location`-Header setzen | `AuthMiddleware.ps1:235` |
-| `Set-PodeCookie` | Manueller `Set-Cookie`-Header | `AuthMiddleware.ps1:351` |
-| `Get-PodeCookie` | Cookie aus Request-Header parsen | `AuthMiddleware.ps1:159` |
-| `Add-PodeTimer` | `Register-ObjectEvent` auf `System.Timers.Timer` | `pim-server.ps1:83` |
-| `Add-PodeStaticRoute` | Datei lesen + als Response senden | `pim-server.ps1:157` |
+| `Start-PodeServer -Threads 5` | `ForEach-Object -Parallel -ThrottleLimit 5` (endless loop) | `pim-server.ps1` |
+| `Add-PodeEndpoint` | `[System.Net.HttpListener]::new()` | `pim-server.ps1` |
+| `Add-PodeMiddleware` | Global filter before every handler | `pim-server.ps1` (SecurityHeaders) |
+| `Add-PodeRoute` | `Register-EngineEvent` with HTTP trigger | `pim-server.ps1` |
+| `$WebEvent` | `$_` / `$PSItem` in pipeline blocks | `routes/Roles.ps1` |
+| `$WebEvent.Data` | Parsed JSON body | `routes/Roles.ps1` (`Invoke-ActivateRole`) |
+| `$WebEvent.Parameters` | `$Matches` after regex match | `pim-server.ps1` (policies route) |
+| `Use-PodeScript` | `Import-Module` in every parallel runspace | `pim-server.ps1` |
+| `Set-PodeState` / `Get-PodeState` | `$using:hashTable` in `ForEach-Object -Parallel` | `pim-server.ps1`, `AuthMiddleware.ps1` |
+| `Lock-PodeObject` | `[Threading.Monitor]::Enter()` / `Exit()` | `AuthMiddleware.ps1` (`Set-AuthSession`) |
+| `Write-PodeJsonResponse` | `ConvertTo-Json \| Write-Output` + HTTP header | `routes/Roles.ps1` |
+| `Move-PodeResponseUrl` | Manual `Location` header | `AuthMiddleware.ps1` (`Invoke-AuthCallback`) |
+| `Set-PodeCookie` | Manual `Set-Cookie` header | `AuthMiddleware.ps1` |
+| `Get-PodeCookie` | Parse cookie from request header | `AuthMiddleware.ps1` (`Get-CookieValue`) |
+| `Add-PodeTimer` | `Register-ObjectEvent` on `System.Timers.Timer` | `pim-server.ps1` (SessionCleanup) |
+| `Add-PodeStaticRoute` | Read file + send as response | `pim-server.ps1` |
 
 ---
 
-## Nächste Schritte
+## Next Steps
 
-1. **Projekt lokal starten:** Siehe [`README.md`](README.md) für Docker-Setup und Umgebungsvariablen.
-2. **Architektur verstehen:** Lies [`architecture.md`](architecture.md) für Modulabhängigkeiten und ADRs.
-3. **Eigene Route hinzufügen:** Erstelle eine Funktion in `routes/`, importiere sie via `Use-PodeScript` in `pim-server.ps1`, und registriere die Route mit `Add-PodeRoute`.
-4. **Pode-Dokumentation:** [badgerati.github.io/Pode](https://badgerati.github.io/Pode/) für das vollständige Framework-Handbuch.
+1. **Start the project locally:** See [`README.md`](README.md) for Docker setup and environment variables.
+2. **Understand the architecture:** Read [`architecture.md`](architecture.md) for module dependencies and ADRs.
+3. **Add a new route:** Create a function in `routes/`, import it via `Use-PodeScript` in `pim-server.ps1`, and register the route with `Add-PodeRoute`.
+4. **Pode documentation:** [badgerati.github.io/Pode](https://badgerati.github.io/Pode/) for the full framework manual.

@@ -1,59 +1,112 @@
-# Contributing to PIMActivation
+# Contributing to PIM Activation Web
 
-Thank you for your interest in contributing to PIMActivation! We welcome contributions from the community to help make PIM management better for everyone.
+Thank you for your interest in contributing! This is a Docker-based web application built with PowerShell (Pode) and vanilla JavaScript.
 
-## 📖 Full Documentation
-
-For comprehensive contribution guidelines, technical setup, and detailed information, please visit our **[Contributing Guide in the Wiki](https://github.com/Noble-Effeciency13/PIMActivation/wiki/Contributing)**.
-
-## 🚀 Quick Start
+## Quick Start
 
 1. **Fork** the repository
 2. **Clone** your fork: `git clone https://github.com/[YourUsername]/PIMActivation.git`
 3. **Create** a feature branch: `git checkout -b feature/amazing-feature`
-4. **Make** your changes
-5. **Test** thoroughly with PowerShell 7+
-6. **Commit** with clear messages: `git commit -m 'Add amazing feature'`
-7. **Push** to your branch: `git push origin feature/amazing-feature`
-8. **Open** a Pull Request
+4. **Configure** your `.env` file (see [README.md](README.md))
+5. **Build & run**: `docker compose up -d --build`
+6. **Make** your changes
+7. **Rebuild & test**: `docker compose down && docker compose up -d --build`
+8. **Commit** with clear messages: `git commit -m 'Add amazing feature'`
+9. **Push** to your branch: `git push origin feature/amazing-feature`
+10. **Open** a Pull Request
 
-## 🤝 Ways to Contribute
+## Development Environment
 
-- **🐛 Bug Reports**: Found something broken? [Open an issue](https://github.com/Noble-Effeciency13/PIMActivation/issues/new?template=bug_report.md)
-- **✨ Feature Requests**: Have an idea? [Suggest it](https://github.com/Noble-Effeciency13/PIMActivation/issues/new?template=feature_request.md)
-- **📚 Documentation**: Help improve docs, examples, or wiki content
-- **🧪 Testing**: Add unit tests or help with manual testing
-- **💻 Code**: Fix bugs, add features, or improve performance
+### Prerequisites
 
-## 📋 Before You Submit Make Sure
+- Docker and Docker Compose
+- An Entra ID app registration with the required permissions (see [README.md](README.md))
+- A text editor (VS Code recommended for PowerShell + JS support)
 
-- ✅ Code follows PowerShell best practices
-- ✅ Changes work on PowerShell 7+
-- ✅ Documentation is updated if needed
-- ✅ Commit messages are clear and descriptive
+### Running Locally
 
-## 🤖 AI-Assisted Development
+```bash
+cp .env.example .env
+# Edit .env with your Entra ID credentials
+mkdir -p certs
+openssl req -x509 -newkey rsa:4096 -keyout certs/key.pem -out certs/cert.pem -days 365 -nodes -subj "/CN=localhost"
+docker compose up -d --build
+```
 
-We embrace modern development practices including AI-assisted programming. If you use AI tools (GitHub Copilot, Claude, ChatGPT) for significant portions of your contribution, please mention it in your PR description. All code must be thoroughly understood, tested, and validated regardless of its origin.
+Open https://localhost in your browser.
 
-## ❓ Questions?
+### Viewing Logs
 
-- 💬 [Join the Discussions](https://github.com/Noble-Effeciency13/PIMActivation/discussions)
-- 📖 [Check the Wiki](https://github.com/Noble-Effeciency13/PIMActivation/wiki)
-- 📝 [Read the Blog Post](https://www.chanceofsecurity.com/post/microsoft-entra-pim-bulk-role-activation-tool)
+```bash
+docker compose logs -f
+```
 
-## 📄 License
+### Rebuilding After Changes
+
+After editing any file under `src/pode-app/`, rebuild the container:
+
+```bash
+docker compose down && docker compose up -d --build
+```
+
+## Project Structure
+
+| Path | Language | Purpose |
+|------|----------|---------|
+| `src/pode-app/pim-server.ps1` | PowerShell | Server entry point, route registration |
+| `src/pode-app/modules/` | PowerShell | Backend modules (logging, config, API layer) |
+| `src/pode-app/middleware/` | PowerShell | OAuth 2.0, session management |
+| `src/pode-app/routes/` | PowerShell | HTTP route handlers |
+| `src/pode-app/public/js/` | JavaScript | Frontend SPA (vanilla, no framework) |
+| `src/pode-app/public/css/` | CSS | Fluent Design styling (light + dark theme) |
+| `Dockerfile` | Docker | Container build definition |
+| `docker-compose.yml` | YAML | Service orchestration |
+
+For detailed architecture, see [architecture.md](architecture.md). For Pode framework concepts, see [pode-onboarding.md](pode-onboarding.md).
+
+## Ways to Contribute
+
+- **Bug Reports**: Found something broken? Open an issue with steps to reproduce.
+- **Feature Requests**: Have an idea? Open an issue describing the use case.
+- **Documentation**: Improve docs, add examples, fix typos.
+- **Code**: Fix bugs, add features, improve performance.
+
+## Code Guidelines
+
+### PowerShell (Backend)
+
+- Use `[CmdletBinding()]` on all functions
+- Add `[Parameter(Mandatory)]` and `[ValidateNotNullOrEmpty()]` where appropriate
+- Use `Write-Log` for all logging (not `Write-Host`)
+- Use `Assert-AuthenticatedSession` for auth guards in route handlers
+- Use `Get-CurrentSessionContext` for session/token access (not manual cookie lookup)
+- Use `Invoke-WebRequest` for HTTP calls (not curl)
+- Follow existing naming: `Invoke-*` for route handlers, `Get-*`/`Set-*`/`New-*` for helpers
+
+### JavaScript (Frontend)
+
+- Vanilla JS only (no frameworks, no build step)
+- Use `escapeHtml()` for all user-provided text rendered in HTML
+- Use `window.apiClient` for all API calls
+- Use `showToast()` / `showErrorToast()` for notifications
+- Use `showProgress()` / `updateProgress()` / `hideProgress()` for batch operations
+- Support both light and dark themes in CSS
+
+### CSS
+
+- Use CSS custom properties (e.g., `var(--primary-color)`)
+- Add `.dark-theme` overrides for dark mode (use explicit hex colors, not inverted CSS variables)
+- Follow the existing section comment structure
+
+## Before You Submit
+
+- Code follows the guidelines above
+- Changes work in both light and dark themes
+- Container builds and starts without errors
+- All existing features still work (roles, activation, profiles, history)
+- Documentation is updated if needed
+- Commit messages are clear and descriptive
+
+## License
 
 By contributing, you agree that your contributions will be licensed under the same [MIT License](LICENSE) that covers this project.
-
----
-
-**Ready to dive deeper?** Visit our **[comprehensive Contributing Guide in the Wiki](https://github.com/Noble-Effeciency13/PIMActivation/wiki/Contributing)** for:
-- Detailed development environment setup
-- Code style guidelines and standards
-- Testing requirements and procedures
-- Pull request process and checklist
-- Architecture documentation
-- And much more!
-
-Thank you for helping make PIMActivation better! 🎉
