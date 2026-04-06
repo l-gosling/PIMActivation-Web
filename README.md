@@ -1,347 +1,302 @@
-# PIMActivation PowerShell Module
+# PIM Activation Web
 
-[![PowerShell Gallery](https://img.shields.io/powershellgallery/v/PIMActivation.svg)](https://www.powershellgallery.com/packages/PIMActivation)
-[![PowerShell Gallery](https://img.shields.io/powershellgallery/dt/PIMActivation.svg)](https://www.powershellgallery.com/packages/PIMActivation)
-[![Publish to PowerShell Gallery](https://github.com/Noble-Effeciency13/PIMActivation/actions/workflows/PSGalleryPublish.yml/badge.svg)](https://github.com/Noble-Effeciency13/PIMActivation/actions/workflows/PSGalleryPublish.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+![Docker](https://img.shields.io/badge/Docker-Container-blue?style=flat-square)
+![PowerShell 7+](https://img.shields.io/badge/PowerShell-7%2B-blue?style=flat-square)
+![Pode](https://img.shields.io/badge/Pode-2.12-purple?style=flat-square)
+![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20Docker-lightgrey?style=flat-square)
 
-A comprehensive PowerShell module for managing Privileged Identity Management (PIM) role activations across Microsoft Entra ID, PIM-enabled groups, and Azure Resources through an intuitive graphical interface. Streamline your privileged access workflows with support for authentication context, bulk activations, and policy compliance across your entire Azure and Microsoft 365 environment.
+A web-based Privileged Identity Management (PIM) tool for Microsoft Entra ID, PIM-enabled groups, and Azure Resources. Built with Pode (PowerShell HTTP server) running in Docker, with Entra ID OAuth 2.0 authentication.
 
-> 📖 **Read the full blog post**: [PIMActivation: The Ultimate Tool for Microsoft Entra PIM Bulk Role Activation](https://www.chanceofsecurity.com/post/microsoft-entra-pim-bulk-role-activation-tool) on [Chance of Security](https://www.chanceofsecurity.com/)
+> This is the web-based successor to the [PIMActivation PowerShell Module](https://github.com/l-gosling/PIMActivation) (Windows Forms GUI).
 
-![PIM Activation Interface](https://img.shields.io/badge/GUI-Windows%20Forms-blue?style=flat-square)
-![PowerShell](https://img.shields.io/badge/PowerShell-7%2B-blue?style=flat-square)
-![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey?style=flat-square)
+## Key Features
 
-## ✨ Key Features
+- **Web-Based UI** - No client installation required, accessible from any browser
+- **Entra ID Roles** - View and activate/deactivate Entra ID directory roles with AU scope support
+- **PIM Groups** - Manage PIM-enabled security group memberships (member/owner)
+- **Azure Resources** - Activate/deactivate Azure subscription and resource roles via PIM
+- **OAuth 2.0** - Secure authentication via Entra ID with automatic token refresh
+- **HTTPS** - TLS support with custom certificates
+- **Dark/Light Theme** - Auto, light, or dark mode with full color customization via environment variables
+- **Persistent Preferences** - Per-user settings stored on Docker volume
+- **Policy Compliance** - Shows MFA, justification, ticket, and approval requirements per role
+- **Customizable** - Branding (logo, colors, copyright) configurable via `.env` file
 
-- 🎨 **Modern GUI Interface** - Clean, responsive Windows Forms application with real-time updates
-- 🔐 **Multi-Role Support** - Activate Microsoft Entra ID roles, PIM-enabled security groups, and Azure Resource roles
-- ⚡ **Parallel Processing Engine** - Lightning-fast parallel execution with real-time progress tracking and emoji indicators
-- 🚀 **High-Performance Batch API** - 85% reduction in API calls through intelligent batching, caching, and concurrent operations
-- 🎯 **Advanced Duplicate Role Handling** - Sophisticated MemberType-based classification system for managing roles with multiple assignment paths
-- 🛡️ **Authentication Context Support** - Seamless handling of Conditional Access authentication context requirements
-- ⏱️ **Flexible Duration** - Configurable activation periods from 30 minutes to 24 hours, depending on policy maximum
-- 📋 **Policy Compliance** - Automatic detection and handling of MFA, justification, and ticket requirements
-- 🔄 **Up-to-Date Snapshot** - Shows current active and pending assignments based on the latest refresh or user action
-- 👤 **Account Management** - Easy account switching without application restart
-- 🔧 **PowerShell Compatibility** - Requires PowerShell 7+ for optimal parallel processing performance and modern language features
+## Screenshots
 
-## 📸 Screenshots
+*Table-based layout showing Active Roles and Eligible Roles with type badges, scope, member type, policy requirements, and expiration times.*
 
-### Main Interface
-![PIM Activation Main Interface](https://github.com/user-attachments/assets/27557d5b-9060-45b4-bd61-dbccb96b6493)
+## Quick Start
 
-*The main PIM activation interface showing eligible roles, active assignments, and activation options with policy requirements. Features intelligent group-role attribution, advanced duplicate role handling with MemberType classification, and smooth progress tracking with batch API performance enhancements.*
+### 1. Clone the Repository
 
-## 🚀 Quick Start
-
-### Installation
-
-#### From PowerShell Gallery (Recommended)
-```powershell
-# Install for current user
-Install-Module -Name PIMActivation -Scope CurrentUser
-
-# Install system-wide (requires admin)
-Install-Module -Name PIMActivation -Scope AllUsers
+```bash
+git clone https://github.com/l-gosling/PIMActivation-Web.git
+cd PIMActivation-Web
 ```
 
-#### From GitHub Source
-```powershell
-# Clone and import
-git clone https://github.com/Noble-Effeciency13/PIMActivation.git
-cd PIMActivation
-Import-Module .\PIMActivation.psd1
+### 2. Configure Environment
+
+```bash
+cp .env.example .env
 ```
 
-### First Run
-```powershell
-# Launch the PIM activation interface
-Start-PIMActivation
+Edit `.env` with your Entra ID app registration details:
+
+```env
+ENTRA_TENANT_ID=your-tenant-id.onmicrosoft.com
+ENTRA_CLIENT_ID=your-app-client-id
+ENTRA_CLIENT_SECRET=your-app-client-secret
+ENTRA_REDIRECT_URI=https://localhost/api/auth/callback
 ```
 
-On first launch, you'll be prompted to authenticate with Microsoft Graph using your organizational account.
+### 3. Set Up HTTPS Certificate
 
-### Use a specific app registration (optional)
-If your organization requires using a dedicated app registration for delegated auth, provide ClientId and TenantId:
-
-```powershell
-Start-PIMActivation -ClientId "<appId>" -TenantId "<tenantId>"
+```bash
+mkdir -p certs
+openssl req -x509 -newkey rsa:4096 -keyout certs/key.pem -out certs/cert.pem -days 365 -nodes -subj "/CN=localhost"
 ```
 
-When both are provided, authentication uses the supplied app; otherwise, the default interactive flow is used.
+See [CERTIFICATES.md](CERTIFICATES.md) for production certificate options (Let's Encrypt, enterprise CA, PFX).
 
-## 📋 Prerequisites
+### 4. Start the Container
 
-### System Requirements
-- **Windows Operating System** (Windows 10/11 or Windows Server 2016+)
-- **PowerShell 7+** (Download from [https://aka.ms/powershell](https://aka.ms/powershell))
-- **.NET Framework 4.7.2+** (for Windows Forms support)
-
-### Required PowerShell Modules
-The following modules will be automatically installed when you first run `Start-PIMActivation`:
-
-#### Microsoft Graph (for Entra ID and Groups)
-- `Microsoft.Graph.Authentication` (2.29.0+)
-- `Microsoft.Graph.Users` (2.29.0+)
-- `Microsoft.Graph.Identity.DirectoryManagement` (2.29.0+)
-- `Microsoft.Graph.Identity.Governance` (2.29.0+)
-- `Microsoft.Graph.Groups` (2.29.0+)
-- `Microsoft.Graph.Identity.SignIns` (2.29.0+)
-
-#### Azure PowerShell (for Azure Resources)
-- `Az.Accounts` (5.1.0+) - provides authentication and context management
-- `Az.Resources` (6.0.0+) - required for Azure Resource PIM role management
-
-**Note:** Dependencies are automatically resolved when you run `Start-PIMActivation`. If you encounter issues, try running the command with the `-Force` parameter for fully automated resolution.
-
-### Microsoft Entra ID Permissions
-Your account needs the following **delegated** permissions:
-
-#### For Entra ID Role Management
-- `RoleEligibilitySchedule.ReadWrite.Directory`
-- `RoleAssignmentSchedule.ReadWrite.Directory`
-- `RoleManagementPolicy.Read.Directory`
-- `Directory.Read.All`
-
-#### For PIM Group Management
-- `PrivilegedAccess.ReadWrite.AzureADGroup`
-- `RoleManagementPolicy.Read.AzureADGroup`
-
-#### For Azure Resource Management
-- **Azure RBAC Reader** or higher at subscription level
-- **Privileged Role Administrator** for PIM-eligible resource role management
-- **Access to Azure subscriptions** where resource roles are assigned
-
-#### Base Permissions
-- `User.Read`
-- `Policy.Read.ConditionalAccess` (for authentication context support)
-
-## 💡 Usage Examples
-
-### Basic Operations
-```powershell
-# Launch with default settings (parallel processing enabled, Entra roles and groups)
-Start-PIMActivation
-
-# Include Azure Resource roles with parallel processing (fast!)
-Start-PIMActivation -IncludeAzureResources
-
-# Include all role types with optimized parallel execution
-Start-PIMActivation -IncludeEntraRoles -IncludeGroups -IncludeAzureResources
-
-# Use a specific app registration for delegated auth
-Start-PIMActivation -ClientId "<appId>" -TenantId "<tenantId>"
-
-# Show only Entra ID directory roles
-Start-PIMActivation -IncludeEntraRoles
-
-# Show only PIM-enabled security groups
-Start-PIMActivation -IncludeGroups
-
-# Show only Azure Resource roles
-Start-PIMActivation -IncludeAzureResources
+```bash
+docker-compose up -d --build
 ```
 
-### Performance and Parallel Processing
-```powershell
-# Default: Parallel processing with ThrottleLimit 10 (fastest)
-Start-PIMActivation -IncludeAzureResources
+### 5. Access the UI
 
-# Increase parallel operations for very large environments
-Start-PIMActivation -IncludeAzureResources -ThrottleLimit 15
+Open **https://localhost** in your browser. You will be automatically redirected to Entra ID for authentication.
 
-# Disable parallel processing for troubleshooting or compatibility
-Start-PIMActivation -IncludeAzureResources -DisableParallelProcessing
+## Entra ID App Registration
 
-# Custom throttle with parallel processing disabled
-Start-PIMActivation -DisableParallelProcessing -ThrottleLimit 1
+### Create the App
 
-# Enable verbose output to see parallel processing performance
-$VerbosePreference = 'Continue'
-Start-PIMActivation -IncludeAzureResources -Verbose
+1. Go to **Azure Portal** > **App registrations** > **New registration**
+2. Name: `PIM Activation Web` (or your choice)
+3. Supported account types: **Single tenant**
+4. Redirect URI: **Web** > `https://localhost/api/auth/callback`
+
+### Configure Authentication
+
+1. Go to **Authentication**
+2. Add redirect URI: `https://localhost/api/auth/callback`
+3. Enable **ID tokens** under Implicit grant
+
+### Add Client Secret
+
+1. Go to **Certificates & secrets** > **New client secret**
+2. Copy the secret value to your `.env` file as `ENTRA_CLIENT_SECRET`
+
+### API Permissions (Delegated)
+
+Add the following **delegated** permissions and grant admin consent:
+
+#### Required
+
+| Permission | API | Type | Admin Consent | Purpose |
+|-----------|-----|------|---------------|---------|
+| `User.Read` | Microsoft Graph | Delegated | No | Read user profile |
+| `openid` | Microsoft Graph | Delegated | No | OpenID Connect sign-in |
+| `profile` | Microsoft Graph | Delegated | No | User profile claims |
+| `email` | Microsoft Graph | Delegated | No | User email claim |
+| `offline_access` | Microsoft Graph | Delegated | No | Refresh tokens |
+| `RoleManagement.ReadWrite.Directory` | Microsoft Graph | Delegated | Yes | Activate/deactivate Entra roles |
+| `PrivilegedAccess.ReadWrite.AzureADGroup` | Microsoft Graph | Delegated | Yes | Activate/deactivate PIM groups |
+| `Policy.Read.All` | Microsoft Graph | Delegated | Yes | Read role policies (MFA, justification) |
+| `AdministrativeUnit.Read.All` | Microsoft Graph | Delegated | Yes | Resolve AU scope names |
+
+#### Optional (for Azure Resource Roles)
+
+| Permission | API | Type | Admin Consent | Purpose |
+|-----------|-----|------|---------------|---------|
+| `user_impersonation` | Azure Service Management | Delegated | No | Azure PIM role management |
+
+> **Note:** `user_impersonation` on Azure Service Management is low-risk and does not require admin consent. It only allows the app to act as the user within their existing Azure RBAC permissions.
+
+## Docker Architecture
+
+```
+docker-compose.yml
+  |
+  +-- pim-app (container)
+       |-- Pode HTTP/HTTPS server (port 8080)
+       |-- PowerShell 7 + .NET SDK Alpine
+       |-- curl (for Graph/Azure REST API calls)
+       |
+       Volumes:
+       |-- ./certs:/etc/pim-certs:ro     (TLS certificates)
+       |-- ./config:/etc/pim-config:ro   (config files)
+       |-- pim-data:/var/pim-data        (persistent preferences)
+       |-- ./logs:/var/log/pim:rw        (log files)
+       |
+       Ports:
+       |-- 443 -> 8080 (HTTPS, configurable via HTTPS_PORT)
 ```
 
-### Advanced Scenarios
-```powershell
-# For organizations with authentication context policies
-# The module automatically handles conditional access requirements
+### Container Base Image
 
-# For bulk activations
-# 1. Launch Start-PIMActivation
-# 2. Select multiple roles
-# 3. Set duration
-# 4. Click "Activate Roles"
-# 5. Fill out justification, and ticket info if required
-# 6. Complete any required authentication challenges
+`mcr.microsoft.com/dotnet/sdk:8.0-alpine` — includes PowerShell 7 and .NET runtime. The Pode module is installed during build.
+
+## Configuration Reference
+
+All configuration is done via the `.env` file. The container reads these at startup.
+
+### Authentication
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ENTRA_TENANT_ID` | *required* | Your Entra ID tenant ID |
+| `ENTRA_CLIENT_ID` | *required* | App registration client ID |
+| `ENTRA_CLIENT_SECRET` | *required* | App registration client secret |
+| `ENTRA_REDIRECT_URI` | `https://localhost/api/auth/callback` | OAuth redirect URI |
+
+### Server
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `HTTPS_PORT` | `443` | Host port for HTTPS |
+| `PODE_PORT` | `8080` | Internal container port |
+| `PODE_MODE` | `production` | Server mode (`production` or `development`) |
+| `LOG_LEVEL` | `Information` | Log level (`Verbose`, `Debug`, `Information`, `Warning`, `Error`) |
+| `SESSION_TIMEOUT` | `3600` | Session duration in seconds |
+
+### Feature Flags
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `INCLUDE_ENTRA_ROLES` | `true` | Enable Entra ID directory roles |
+| `INCLUDE_GROUPS` | `true` | Enable PIM-enabled groups |
+| `INCLUDE_AZURE_RESOURCES` | `false` | Enable Azure resource roles (requires `user_impersonation` permission) |
+
+### Theme & Branding
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `THEME_PRIMARY_COLOR` | `#0078D4` | Primary brand color |
+| `THEME_SECONDARY_COLOR` | `#107C10` | Secondary color |
+| `THEME_DANGER_COLOR` | `#DA3B01` | Error/danger color |
+| `THEME_WARNING_COLOR` | `#FFB900` | Warning color |
+| `THEME_SUCCESS_COLOR` | `#107C10` | Success color |
+| `THEME_SECTION_HEADER_COLOR` | *(primary)* | Table section header background |
+| `THEME_ENTRA_COLOR` | `#0078D4` | Entra type badge color |
+| `THEME_GROUP_COLOR` | `#107C10` | Group type badge color |
+| `THEME_AZURE_COLOR` | `#003067` | Azure type badge color |
+| `THEME_FONT_FAMILY` | `Segoe UI, -apple-system, sans-serif` | Font family |
+| `APP_COPYRIGHT` | *(empty)* | Footer copyright text (hidden when empty) |
+
+## HTTPS Certificates
+
+Certificates are mounted from the host `./certs/` directory:
+
+```
+certs/
+  cert.pem    # Certificate chain (PEM)
+  key.pem     # Private key (PEM, no passphrase)
 ```
 
-## 🚀 Parallel Processing Engine
+| Method | Command |
+|--------|---------|
+| **Self-signed** (dev) | `openssl req -x509 -newkey rsa:4096 -keyout certs/key.pem -out certs/cert.pem -days 365 -nodes -subj "/CN=localhost"` |
+| **Let's Encrypt** | Copy `fullchain.pem` and `privkey.pem` from certbot |
+| **Enterprise PFX** | `openssl pkcs12 -in cert.pfx -clcerts -nokeys -out certs/cert.pem` and `openssl pkcs12 -in cert.pfx -nocerts -nodes -out certs/key.pem` |
 
-### Performance Features
-The module includes a powerful parallel processing engine that dramatically improves performance:
+If no certificates are found, the server falls back to HTTP automatically.
 
-- **Default Parallel Execution**: All operations run in parallel by default (PowerShell 7+ required)
-- **Real-Time Progress Tracking**: Visual progress with emoji indicators (🚀, ✅, ❌) and timing metrics
-- **Intelligent Throttling**: Default ThrottleLimit of 10 concurrent operations, adjustable up to 50
-- **Thread-Safe Operations**: Concurrent collections ensure safe parallel execution
-- **Enhanced Verbose Output**: Detailed logging shows parallel operation progress and performance gains
+See [CERTIFICATES.md](CERTIFICATES.md) for detailed instructions.
 
-### Parallel Processing Control
-```powershell
-# Default: Parallel processing enabled (fastest)
-Start-PIMActivation
+## Project Structure
 
-# Increase concurrency for large environments
-Start-PIMActivation -ThrottleLimit 20
-
-# Disable parallel processing if needed
-Start-PIMActivation -DisableParallelProcessing
-
-# See parallel processing performance
-$VerbosePreference = 'Continue'
-Start-PIMActivation -Verbose
+```
+PIMActivation-Web/
+|-- Dockerfile                          # Container build
+|-- docker-compose.yml                  # Service orchestration
+|-- .env.example                        # Environment template
+|-- CERTIFICATES.md                     # HTTPS certificate guide
+|-- certs/                              # TLS certificates (mounted)
+|-- config/                             # Config files (mounted)
+|-- logs/                               # Log output (mounted)
+|-- src/pode-app/
+    |-- pim-server.ps1                  # Pode server entry point
+    |-- middleware/
+    |   +-- AuthMiddleware.ps1          # OAuth 2.0 flow, session management
+    |-- modules/
+    |   |-- Configuration.ps1           # Environment config reader
+    |   |-- Logger.ps1                  # Structured logging
+    |   +-- PIMApiLayer.ps1             # Graph & Azure REST API calls
+    |-- routes/
+    |   |-- Config.ps1                  # Theme, features, preferences API
+    |   +-- Roles.ps1                   # Role CRUD API
+    +-- public/
+        |-- index.html                  # Single-page UI
+        |-- css/style.css               # Fluent Design CSS
+        |-- images/                     # Logo, favicon
+        +-- js/
+            |-- api-client.js           # HTTP client
+            |-- app.js                  # Theme, init
+            |-- auth.js                 # OAuth flow
+            |-- activation.js           # Activation dialog
+            +-- roles.js                # Role tables
 ```
 
-### Performance Impact
-- **Azure Subscriptions**: Processes multiple subscriptions concurrently
-- **Policy Retrieval**: Fetches Entra and Group policies in parallel
-- **Real-Time Feedback**: Shows progress like "Processing 5 subscriptions in parallel"
-- **Timing Metrics**: Displays completion times, e.g., "Completed in 3.2s"
+## Security
 
-## 🔧 Configuration
+- **OAuth 2.0 Authorization Code** flow with Entra ID
+- **HttpOnly + Secure** session cookies with SameSite
+- **Automatic token refresh** using refresh tokens
+- **Cryptographic session IDs** (48-byte random)
+- **Session cleanup timer** purges expired sessions every 5 minutes
+- **Input validation** — role IDs validated as GUIDs
+- **Auth checks** on all protected API endpoints
+- **Generic error messages** to client, detailed errors logged server-side
+- **No secrets in logs** — tokens and OAuth details stripped from output
+- **HTTPS** with custom certificate support
 
-### Authentication Context Support
-The module automatically detects and handles authentication context requirements from Conditional Access policies. When a role requires additional authentication, the module will:
+## Troubleshooting
 
-1. Detect the authentication context requirement for each selected roles
-2. Group roles by context ID
-3. Prompt re-authentication pr. context ID, utilizing WAM
-4. Handle the activation seamlessly
+### Container won't start
 
-### Module Settings
-```powershell
-# View current Graph connection
-Get-MgContext
-
-# Clear cached tokens (useful for troubleshooting)
-Disconnect-MgGraph
+```bash
+docker-compose logs --tail=30
 ```
 
-## 📊 Supported Role Types
+### Session expired errors
 
-| Role Type | Support Status | Notes |
-|-----------|---------------|-------|
-| **Entra ID Directory Roles** | ✅ Full Support | Global Admin, User Admin, etc. |
-| **PIM-Enabled Security Groups** | ✅ Full Support | Groups with PIM governance enabled |
-| **Azure Resource Roles** | ✅ Full Support | Subscription, resource group, and individual resource roles |
+The Graph access token auto-refreshes via the refresh token. If refresh fails, sign out and sign back in.
 
-### Azure Resource Role Features
-- **Multi-Subscription Support**: Automatically enumerates roles across all accessible Azure subscriptions
-- **Scope Hierarchy**: Supports tenant root, management group, subscription, resource group, and individual resource scopes
-- **Inheritance Detection**: Distinguishes between direct assignments and inherited roles from higher scopes
-- **Silent SSO**: Seamlessly authenticates to Azure PowerShell using your existing Graph authentication context
-- **Resource Type Parsing**: Intelligently displays resource names and types (Storage Account, Virtual Machine, etc.)
-- **PIM Integration**: Full support for PIM-eligible Azure Resource role activation and deactivation
+### Azure roles not showing
 
-## 🛠️ Troubleshooting
+1. Ensure `INCLUDE_AZURE_RESOURCES=true` in `.env`
+2. Add `user_impersonation` permission on Azure Service Management in your app registration
+3. Check user preference: Settings > "Show Azure Resource roles"
+4. Sign out and back in to get a new Azure Management token
 
-### Common Issues
+### Roles not loading
 
-**Authentication Failures**
-```powershell
-# Clear authentication cache
-Disconnect-MgGraph
+Check the container logs for Graph API errors:
 
-# Restart with fresh authentication
-Start-PIMActivation
+```bash
+docker-compose logs --tail=50 | grep -i "error\|failed"
 ```
 
-**PowerShell Version Issues**
-- The module requires PowerShell 7+ for modern language features and WAM authentication support
-- WAM (Windows Web Account Manager) provides more reliable authentication on Windows 10/11
+### HTTPS certificate issues
 
-**Permission Errors**
-- Ensure your account has the required PIM role assignments
-- Check that the necessary Graph API permissions are consented for your organization
-
-### Verbose Logging
-```powershell
-# Enable detailed logging for troubleshooting
-$VerbosePreference = 'Continue'
-Start-PIMActivation -Verbose
+```bash
+# Verify cert and key match
+openssl x509 -noout -modulus -in certs/cert.pem | openssl md5
+openssl rsa -noout -modulus -in certs/key.pem | openssl md5
 ```
 
-## 🔒 Security Considerations
+Both MD5 values must match. See [CERTIFICATES.md](CERTIFICATES.md) for more.
 
-- **Credential Management**: Uses Microsoft Graph delegated permissions, no credentials are stored
-- **Token Handling**: Leverages WAM (Windows Web Account Manager) for secure token management with automatic refresh
-- **Authentication Context**: Properly handles conditional access policies and authentication challenges
-- **Audit Trail**: All role activations are logged in Entra ID audit logs
+## Related
 
-## 🗺️ Roadmap
+- [PIMActivation PowerShell Module](https://github.com/l-gosling/PIMActivation) - Original Windows Forms GUI version
+- [Pode](https://badgerati.github.io/Pode/) - PowerShell cross-platform web server
+- [Microsoft Graph PIM API](https://learn.microsoft.com/en-us/graph/api/resources/privilegedidentitymanagementv3-overview)
 
-### Version 2.1.0 (Planned)
-- **Profile Management**: Save and quickly activate frequently used role and account combinations
-- **Scheduling**: Plan role activations for future times
-- **Enhanced Reporting**: Built-in activation history and analytics
-- **Persistent Settings**: Save parallel processing and throttle preferences
+## License
 
-### Wishlist features
-- **Cross-Platform**: Linux and macOS Support
-- **Backwards compatibility**: Support for Powershell 5.1
-- **Mobile app**: Mobile app for PIM Activations on the go
-- **Reporting**: Built-in activation history and analytics
-- **Automation integration**: Integration with different automation systems - still a liquid idea
-
-## 🤝 Contributing
-
-I welcome contributions! Please see my [Contributing Guidelines](CONTRIBUTING.md) for details.
-
-### Development Setup
-
-```powershell
-# Clone the repository
-git clone https://github.com/Noble-Effeciency13/PIMActivation.git
-cd PIMActivation
-
-# Import module for development
-Import-Module .\PIMActivation.psd1 -Force
-
-# Run tests (when available)
-Invoke-Pester
-```
-
-### Areas for Contribution
-- 🧪 **Testing**: Unit tests and integration tests
-- 📚 **Documentation**: Examples, tutorials, and API documentation
-- 🔧 **Features**: Azure resource roles, profile management
-- 🐛 **Bug Fixes**: Issue resolution and performance improvements
-
-## 🤖 Development Transparency
-
-This module was developed using modern AI-assisted programming practices, combining AI tools (GitHub Copilot and Claude) with human expertise in Microsoft identity and security workflows. All code has been thoroughly reviewed, tested, and validated in production environments.
-
-The authentication context implementation particularly benefited from AI assistance in solving complex token management and timing challenges. The result is production-ready code that leverages the efficiency of AI-assisted development while maintaining high standards of quality and security.
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🆘 Support
-
-- **GitHub Issues**: [Report bugs or request features](https://github.com/Noble-Effeciency13/PimActivation/issues)
-- **Documentation**: [Wiki and guides](https://github.com/Noble-Effeciency13/PimActivation/wiki)
-- **Discussions**: [Community discussions](https://github.com/Noble-Effeciency13/PimActivation/discussions)
-- **Blog Post**: [Detailed solution walkthrough](https://www.chanceofsecurity.com/post/microsoft-entra-pim-bulk-role-activation-tool)
-- **Author's Blog**: [Chance of Security](https://www.chanceofsecurity.com/)
-
-## 🙏 Acknowledgments
-
-- **Trevor Jones** for his excellent blog post on [WAM authentication in PowerShell](https://smsagent.blog/2024/11/28/getting-an-access-token-for-microsoft-entra-in-powershell-using-the-web-account-manager-wam-broker-in-windows/) which was instrumental in implementing reliable authentication
-- PowerShell community for best practices and feedback
-
----
-
-**Made with ❤️ for the PowerShell and Microsoft Entra ID community**
+[MIT](LICENSE)
