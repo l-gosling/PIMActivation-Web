@@ -26,6 +26,58 @@ function showLoading(visible) {
 }
 
 /**
+ * Show a progress overlay for batch operations (activate/deactivate)
+ * @param {string} title - e.g. "Activating roles"
+ * @param {number} total - total number of items
+ */
+function showProgress(title, total) {
+    hideProgress();
+    const overlay = document.createElement('div');
+    overlay.id = 'progress-overlay';
+    overlay.className = 'progress-overlay';
+    overlay.innerHTML = `
+        <div class="progress-card">
+            <div class="progress-title">${escapeHtml(title)}</div>
+            <div class="progress-role" id="progress-role">&nbsp;</div>
+            <div class="progress-warning hidden" id="progress-warning"></div>
+            <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+            <div class="progress-count" id="progress-count">0 / ${total}</div>
+        </div>`;
+    document.body.appendChild(overlay);
+}
+
+/**
+ * Update the progress overlay
+ * @param {number} current - items completed so far
+ * @param {number} total - total items
+ * @param {string} roleName - name of the role currently being processed
+ * @param {string} [warning] - optional warning message (shown in yellow)
+ */
+function updateProgress(current, total, roleName, warning) {
+    const fill = document.getElementById('progress-fill');
+    const count = document.getElementById('progress-count');
+    const role = document.getElementById('progress-role');
+    const warn = document.getElementById('progress-warning');
+    if (fill) fill.style.width = `${Math.round((current / total) * 100)}%`;
+    if (count) count.textContent = `${current} / ${total}`;
+    if (role) role.textContent = roleName || '';
+    if (warn) {
+        if (warning) {
+            warn.textContent = warning;
+            warn.classList.remove('hidden');
+        } else {
+            warn.textContent = '';
+            warn.classList.add('hidden');
+        }
+    }
+}
+
+/** Remove the progress overlay */
+function hideProgress() {
+    document.getElementById('progress-overlay')?.remove();
+}
+
+/**
  * Show toast notification
  */
 function showToast(message, type = 'info', duration = 5000) {

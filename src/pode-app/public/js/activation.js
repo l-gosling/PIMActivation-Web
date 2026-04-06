@@ -150,33 +150,59 @@ class ActivationManager {
         const ticketNumber = document.getElementById('ticket-input').value;
 
         try {
-            showLoading(true);
             // Copy roles before closing dialog (closeDialog clears the array)
             const roles = [...this.rolesToActivate];
             this.closeDialog();
 
+            showProgress('Activating roles', roles.length);
             let succeeded = [];
             let failed = [];
+            let capped = [];
 
-            for (const role of roles) {
-                const roleLabel = `[${role.type}] ${role.name}${role.scope && role.scope !== 'Directory' ? ' (' + role.scope + ')' : ''}`;
+            for (let i = 0; i < roles.length; i++) {
+                const role = roles[i];
+                const scopeSuffix = role.scope ? ` (${role.scope})` : '';
+                const roleLabel = `[${role.type}] ${role.name}${scopeSuffix}`;
+                const displayName = `${role.name}${scopeSuffix}`;
+
+                // Cap duration to policy max if selected duration exceeds it
+                let effectiveDuration = durationMinutes;
+                const maxMinutes = role.maxDurationHours ? role.maxDurationHours * 60 : null;
+                const isCapped = maxMinutes && durationMinutes > maxMinutes;
+                if (isCapped) {
+                    effectiveDuration = maxMinutes;
+                }
+
+                const capText = isCapped
+                    ? (role.maxDurationHours >= 1 ? `${role.maxDurationHours}h` : `${effectiveDuration}m`)
+                    : null;
+                const warning = isCapped
+                    ? `Duration reduced to ${capText} (policy maximum)`
+                    : null;
+
+                updateProgress(i, roles.length, displayName, warning);
+
                 try {
                     const roleType = role.type === 'Group' ? 'Group' : role.type === 'AzureResource' ? 'AzureResource' : 'User';
                     const result = await window.apiClient.activateRole(role.id, roleType, {
                         directoryScopeId: role.directoryScopeId || '/',
-                        durationMinutes,
+                        durationMinutes: effectiveDuration,
                         justification: justification || 'Activated via PIM Web',
                         ticketNumber: ticketNumber || null
                     });
 
                     if (result.success) {
                         succeeded.push(roleLabel);
+                        if (isCapped) {
+                            capped.push(`${roleLabel} → ${capText}`);
+                        }
                     } else {
                         failed.push({ role: roleLabel, error: result.error || 'Unknown error' });
                     }
                 } catch (error) {
                     failed.push({ role: roleLabel, error: error.message });
                 }
+                updateProgress(i + 1, roles.length, displayName);
             }
 
             // Clear selections regardless of outcome
@@ -185,9 +211,12 @@ class ActivationManager {
 
             if (succeeded.length > 0 && failed.length === 0) {
                 // All succeeded
-                const roleList = succeeded.join('\n');
-                showToast(`Activated ${succeeded.length} role(s) for ${this.getSelectedDurationText()}:\n${roleList}`, 'success', 10000);
-                await new Promise(resolve => setTimeout(resolve, 3000));
+                let msg = `Activated ${succeeded.length} role(s) for ${this.getSelectedDurationText()}:\n${succeeded.join('\n')}`;
+                if (capped.length > 0) {
+                    msg += `\n\nDuration capped by policy:\n${capped.join('\n')}`;
+                }
+                showToast(msg, 'success', 10000);
+                await new Promise(resolve => setTimeout(resolve, 10000));
                 await window.roleManager.loadRoles();
                 if (this.onSuccess) this.onSuccess();
             }
@@ -196,6 +225,9 @@ class ActivationManager {
                 let details = '';
                 if (succeeded.length > 0) {
                     details += `Activated:\n${succeeded.join('\n')}\n\n`;
+                }
+                if (capped.length > 0) {
+                    details += `Duration capped by policy:\n${capped.join('\n')}\n\n`;
                 }
                 details += `Failed (${failed.length}):\n${failed.map(f => `${f.role}\n  Error: ${f.error}`).join('\n\n')}`;
                 showErrorToast(
@@ -211,7 +243,7 @@ class ActivationManager {
         } catch (error) {
             showErrorToast('Activation error', error.message);
         } finally {
-            showLoading(false);
+            hideProgress();
         }
     }
 

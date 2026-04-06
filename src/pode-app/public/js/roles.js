@@ -223,16 +223,18 @@ class RoleManager {
         if (!confirm(`Deactivate ${this.selectedActive.size} role(s)?`)) return;
 
         try {
-            showLoading(true);
             const uids = Array.from(this.selectedActive);
+            showProgress('Deactivating roles', uids.length);
             let succeeded = [];
             let failed = [];
 
-            for (const uid of uids) {
+            for (let i = 0; i < uids.length; i++) {
+                const uid = uids[i];
                 const role = this.activeRoles.find(r => (r.uid || r.id) === uid);
                 const roleLabel = role
                     ? `[${role.type}] ${role.name}${role.scope && role.scope !== 'Directory' ? ' (' + role.scope + ')' : ''}`
                     : uid;
+                updateProgress(i, uids.length, role ? `${role.name}${role.scope && role.scope !== 'Directory' ? ' (' + role.scope + ')' : ''}` : uid);
                 try {
                     const roleType = role?.type === 'Group' ? 'Group' : role?.type === 'AzureResource' ? 'AzureResource' : 'User';
                     const result = await window.apiClient.deactivateRole(role?.id || uid, roleType, {
@@ -246,12 +248,13 @@ class RoleManager {
                 } catch (error) {
                     failed.push({ role: roleLabel, error: error.message });
                 }
+                updateProgress(i + 1, uids.length, role ? `${role.name}${role.scope && role.scope !== 'Directory' ? ' (' + role.scope + ')' : ''}` : uid);
             }
 
             if (succeeded.length > 0 && failed.length === 0) {
                 const roleList = succeeded.join('\n');
                 showToast(`Deactivated ${succeeded.length} role(s):\n${roleList}`, 'success', 10000);
-                await new Promise(resolve => setTimeout(resolve, 3000));
+                await new Promise(resolve => setTimeout(resolve, 10000));
                 await this.loadRoles();
             }
             else if (failed.length > 0) {
@@ -272,7 +275,7 @@ class RoleManager {
         } catch (error) {
             showErrorToast('Deactivation error', error.message);
         } finally {
-            showLoading(false);
+            hideProgress();
             this.selectedActive.clear();
             document.querySelectorAll('.active-check').forEach(cb => cb.checked = false);
             this.updateButtons();

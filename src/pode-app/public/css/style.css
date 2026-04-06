@@ -1073,6 +1073,94 @@ body.dark-theme .section-title-bar {
 }
 
 /* ============================================================================
+   Batch Progress Bar
+   ============================================================================ */
+
+.progress-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 2600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.progress-card {
+    background: var(--neutral-white);
+    border-radius: 8px;
+    padding: var(--spacing-lg);
+    min-width: 340px;
+    max-width: 480px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+
+.progress-title {
+    font-size: var(--font-size-md);
+    font-weight: 600;
+    margin-bottom: var(--spacing-sm);
+    color: var(--neutral-primary);
+}
+
+.progress-role {
+    font-size: var(--font-size-sm);
+    color: var(--neutral-secondary);
+    margin-bottom: var(--spacing-md);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.progress-warning {
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: var(--warning-color);
+    background: rgba(255, 185, 0, 0.12);
+    border-left: 3px solid var(--warning-color);
+    padding: var(--spacing-xs) var(--spacing-sm);
+    margin-bottom: var(--spacing-md);
+    border-radius: 2px;
+}
+
+.progress-track {
+    height: 6px;
+    background: var(--neutral-light-alt);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: var(--spacing-sm);
+}
+
+.progress-fill {
+    height: 100%;
+    background: var(--primary-color);
+    border-radius: 3px;
+    transition: width 0.25s ease;
+    width: 0%;
+}
+
+.progress-count {
+    font-size: var(--font-size-sm);
+    color: var(--neutral-tertiary);
+    text-align: right;
+}
+
+.dark-theme .progress-card {
+    background: var(--neutral-dark);
+}
+
+.dark-theme .progress-title {
+    color: var(--neutral-light);
+}
+
+.dark-theme .progress-role {
+    color: var(--neutral-tertiary);
+}
+
+.dark-theme .progress-track {
+    background: var(--neutral-primary);
+}
+
+/* ============================================================================
    Utility Classes
    ============================================================================ */
 
