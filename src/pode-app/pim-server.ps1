@@ -42,10 +42,6 @@ $RoutesPath = Join-Path $PSScriptRoot 'routes'
 . (Join-Path $ModulePath 'Configuration.ps1')
 . (Join-Path $ModulePath 'PIMApiLayer.ps1')
 . (Join-Path $MiddlewarePath 'AuthMiddleware.ps1')
-. (Join-Path $MiddlewarePath 'ErrorMiddleware.ps1')
-. (Join-Path $MiddlewarePath 'LoggingMiddleware.ps1')
-. (Join-Path $RoutesPath 'Health.ps1')
-. (Join-Path $RoutesPath 'Auth.ps1')
 . (Join-Path $RoutesPath 'Roles.ps1')
 . (Join-Path $RoutesPath 'Config.ps1')
 
@@ -77,10 +73,6 @@ Start-PodeServer -Name 'PIM-Activation' -Threads 5 {
     Use-PodeScript -Path (Join-Path $PSScriptRoot 'modules' 'Configuration.ps1')
     Use-PodeScript -Path (Join-Path $PSScriptRoot 'modules' 'PIMApiLayer.ps1')
     Use-PodeScript -Path (Join-Path $PSScriptRoot 'middleware' 'AuthMiddleware.ps1')
-    Use-PodeScript -Path (Join-Path $PSScriptRoot 'middleware' 'ErrorMiddleware.ps1')
-    Use-PodeScript -Path (Join-Path $PSScriptRoot 'middleware' 'LoggingMiddleware.ps1')
-    Use-PodeScript -Path (Join-Path $PSScriptRoot 'routes' 'Health.ps1')
-    Use-PodeScript -Path (Join-Path $PSScriptRoot 'routes' 'Auth.ps1')
     Use-PodeScript -Path (Join-Path $PSScriptRoot 'routes' 'Roles.ps1')
     Use-PodeScript -Path (Join-Path $PSScriptRoot 'routes' 'Config.ps1')
 

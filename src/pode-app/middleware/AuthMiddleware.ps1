@@ -250,23 +250,6 @@ function Invoke-AuthCallback {
 
 <#
 .SYNOPSIS
-    Validate CSRF token on state-changing requests
-#>
-function Test-CsrfToken {
-    $sessionId = Get-CookieValue -Name 'pim_session'
-    if (-not $sessionId) { return $false }
-
-    $session = Get-AuthSession -SessionId $sessionId
-    if (-not $session) { return $false }
-
-    $headerToken = $WebEvent.Request.Headers['X-CSRF-Token']
-    if ([string]::IsNullOrWhiteSpace($headerToken)) { return $false }
-
-    return $headerToken -eq $session.CsrfToken
-}
-
-<#
-.SYNOPSIS
     Logout route handler
 #>
 function Invoke-AuthLogout {
