@@ -1,5 +1,7 @@
 # PIM Activation Web
 
+> **:construction: This project is under active construction — features may be incomplete, broken, or change without notice. :construction:**
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 ![Docker](https://img.shields.io/badge/Docker-Container-blue?style=flat-square)
 ![PowerShell 7+](https://img.shields.io/badge/PowerShell-7%2B-blue?style=flat-square)
@@ -7,6 +9,8 @@
 ![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20Docker-lightgrey?style=flat-square)
 
 A web-based Privileged Identity Management (PIM) tool for Microsoft Entra ID, PIM-enabled groups, and Azure Resources. Built with Pode (PowerShell HTTP server) running in Docker, with Entra ID OAuth 2.0 authentication.
+
+> Inspired by [Noble-Effeciency13/PIMActivation](https://github.com/Noble-Effeciency13/PIMActivation) — thanks for the original idea! This project is a complete architectural rewrite (Pode web server, Docker, web UI).
 
 ## Key Features
 
