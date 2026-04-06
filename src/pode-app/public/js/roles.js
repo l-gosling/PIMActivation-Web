@@ -15,6 +15,7 @@ class RoleManager {
         document.getElementById('activate-button')?.addEventListener('click', () => this.handleActivate());
         document.getElementById('deactivate-button')?.addEventListener('click', () => this.handleDeactivate());
         document.getElementById('refresh-button')?.addEventListener('click', () => this.loadRoles());
+        document.getElementById('refresh-button-bottom')?.addEventListener('click', () => this.loadRoles());
 
         document.getElementById('search-active')?.addEventListener('input', (e) => {
             this.filterRoles('active', e.target.value);

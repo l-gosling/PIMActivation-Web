@@ -142,15 +142,18 @@ class PIMApplication {
 
     async initialize() {
         try {
-            // Check authentication first
+            // Load theme immediately (doesn't need auth)
+            await this.loadTheme();
+
+            // Check authentication
             const isAuthenticated = await window.authManager.checkAuthentication();
 
             if (!isAuthenticated) {
                 return;
             }
 
-            // Load configuration
-            await this.loadConfiguration();
+            // Load feature config
+            await this.loadFeatureConfig();
 
             // Initialize keyboard shortcuts
             this.initKeyboardShortcuts();
@@ -166,23 +169,26 @@ class PIMApplication {
         }
     }
 
-    async loadConfiguration() {
+    async loadTheme() {
         try {
-            const [featureConfig, themeConfig] = await Promise.all([
-                window.apiClient.getFeatureConfig(),
-                window.apiClient.getThemeConfig()
-            ]);
-
-            if (featureConfig.success) {
-                this.config = featureConfig.features;
-            }
-
+            const themeConfig = await window.apiClient.getThemeConfig();
             if (themeConfig.success) {
                 this.theme = themeConfig.theme;
                 this.applyTheme();
             }
         } catch (error) {
-            console.warn('Could not load configuration:', error);
+            console.warn('Could not load theme:', error);
+        }
+    }
+
+    async loadFeatureConfig() {
+        try {
+            const featureConfig = await window.apiClient.getFeatureConfig();
+            if (featureConfig.success) {
+                this.config = featureConfig.features;
+            }
+        } catch (error) {
+            console.warn('Could not load feature config:', error);
         }
     }
 
@@ -190,11 +196,23 @@ class PIMApplication {
         if (!this.theme) return;
 
         const root = document.documentElement;
-        root.style.setProperty('--primary-color', this.theme.primaryColor);
-        root.style.setProperty('--secondary-color', this.theme.secondaryColor);
-        root.style.setProperty('--danger-color', this.theme.dangerColor);
-        root.style.setProperty('--warning-color', this.theme.warningColor);
-        root.style.setProperty('--success-color', this.theme.successColor);
+        if (this.theme.primaryColor) root.style.setProperty('--primary-color', this.theme.primaryColor);
+        if (this.theme.secondaryColor) root.style.setProperty('--secondary-color', this.theme.secondaryColor);
+        if (this.theme.dangerColor) root.style.setProperty('--danger-color', this.theme.dangerColor);
+        if (this.theme.warningColor) root.style.setProperty('--warning-color', this.theme.warningColor);
+        if (this.theme.successColor) root.style.setProperty('--success-color', this.theme.successColor);
+        if (this.theme.fontFamily) root.style.setProperty('--font-family', this.theme.fontFamily);
+        if (this.theme.sectionHeaderColor) root.style.setProperty('--section-header-color', this.theme.sectionHeaderColor);
+        if (this.theme.entraColor) root.style.setProperty('--entra-color', this.theme.entraColor);
+        if (this.theme.groupColor) root.style.setProperty('--group-color', this.theme.groupColor);
+        if (this.theme.azureColor) root.style.setProperty('--azure-color', this.theme.azureColor);
+
+        // Show copyright footer if configured
+        const footer = document.getElementById('app-footer');
+        if (footer && this.theme.copyright) {
+            footer.textContent = this.theme.copyright;
+            footer.classList.remove('hidden');
+        }
     }
 
     initKeyboardShortcuts() {

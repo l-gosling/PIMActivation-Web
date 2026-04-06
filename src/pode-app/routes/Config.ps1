@@ -53,16 +53,21 @@ function Invoke-GetThemeConfig {
 
     try {
         $theme = @{
-            primaryColor        = '#0078D4'  # Entra ID Blue
-            secondaryColor      = '#107C10' # Graph Green
-            dangerColor         = '#DA3B01'  # Error Red
-            warningColor        = '#FFB900'  # Warning Yellow
-            successColor        = '#107C10'  # Success Green
+            primaryColor        = $env:THEME_PRIMARY_COLOR ?? '#0078D4'
+            secondaryColor      = $env:THEME_SECONDARY_COLOR ?? '#107C10'
+            dangerColor         = $env:THEME_DANGER_COLOR ?? '#DA3B01'
+            warningColor        = $env:THEME_WARNING_COLOR ?? '#FFB900'
+            successColor        = $env:THEME_SUCCESS_COLOR ?? '#107C10'
+            sectionHeaderColor  = $env:THEME_SECTION_HEADER_COLOR ?? ($env:THEME_PRIMARY_COLOR ?? '#0078D4')
+            entraColor          = $env:THEME_ENTRA_COLOR ?? '#0078D4'
+            groupColor          = $env:THEME_GROUP_COLOR ?? '#107C10'
+            azureColor          = $env:THEME_AZURE_COLOR ?? '#003067'
             neutralLight        = '#F3F2F1'
             neutralQuaternary   = '#D0D0D0'
-            fontFamily          = 'Segoe UI, -apple-system, sans-serif'
+            fontFamily          = $env:THEME_FONT_FAMILY ?? 'Segoe UI, -apple-system, sans-serif'
             borderRadius        = '4px'
             shadowDepth         = '0 1.6px 3.6px rgba(0, 0, 0, 0.132), 0 0.3px 0.9px rgba(0, 0, 0, 0.108)'
+            copyright           = $env:APP_COPYRIGHT ?? ''
         }
 
         Write-PodeJsonResponse -Value @{
