@@ -425,6 +425,7 @@ body {
     overflow-x: auto;
     max-height: 40vh;
     overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
 }
 
 .roles-table {
@@ -1087,79 +1088,165 @@ body.dark-theme .section-title-bar {
    Responsive Design
    ============================================================================ */
 
-@media (max-width: 768px) {
-    .app-main {
-        flex-direction: column;
+/* Tablet */
+@media (max-width: 1024px) {
+    .roles-table {
+        font-size: 12px;
     }
 
-    .app-sidebar {
-        flex: 0 0 auto;
-        border-right: none;
-        border-bottom: 1px solid var(--neutral-tertiary-alt);
+    .roles-table th,
+    .roles-table td {
+        padding: 4px 6px;
     }
 
-    .nav-menu {
-        flex-direction: row;
-        gap: var(--spacing-md);
-    }
-
-    .nav-item {
-        flex: 1;
-        border-left: none;
-        border-bottom: 3px solid transparent;
-        padding: var(--spacing-sm) var(--spacing-md);
-    }
-
-    .nav-item.active {
-        border-left: none;
-        border-bottom-color: var(--primary-color);
-    }
-
-    .app-header {
-        flex-wrap: wrap;
-    }
-
-    .header-center {
-        order: 3;
-        flex-basis: 100%;
-    }
-
-    .app-content {
-        padding: var(--spacing-md);
-    }
-
-    .modal-content {
-        width: 95%;
-    }
-
-    .toast {
-        max-width: calc(100vw - var(--spacing-lg) * 2);
-    }
+    .col-flag { width: 60px; }
 }
 
-@media (max-width: 480px) {
+/* Mobile landscape / small tablet */
+@media (max-width: 768px) {
     .app-header {
-        padding: var(--spacing-sm) var(--spacing-md);
+        padding: var(--spacing-sm);
     }
 
-    .app-title {
+    .header-logo {
+        height: 24px;
+    }
+
+    .user-name {
         display: none;
     }
 
-    .action-bar {
-        flex-direction: column;
+    .app-main-stacked {
+        padding: var(--spacing-sm);
+        gap: var(--spacing-sm);
     }
 
-    .btn {
+    .section-title-bar {
+        flex-wrap: wrap;
+        gap: var(--spacing-sm);
+        padding: var(--spacing-sm);
+    }
+
+    .section-title-bar h2 {
+        font-size: var(--font-size-base);
+    }
+
+    .section-search {
+        width: 120px;
+        font-size: 12px;
+    }
+
+    .roles-table-container {
+        max-height: 35vh;
+    }
+
+    /* Hide less important columns on mobile */
+    .col-resource { display: none; }
+    .col-flag { display: none; }
+    .col-duration { display: none; }
+    .col-member { display: none; }
+    .roles-table th.col-resource,
+    .roles-table th.col-flag,
+    .roles-table th.col-duration,
+    .roles-table th.col-member { display: none; }
+
+    .action-bar-bottom {
+        flex-wrap: wrap;
+        gap: var(--spacing-sm);
+        padding: var(--spacing-sm);
+    }
+
+    .duration-selector {
+        flex-wrap: wrap;
         width: 100%;
     }
 
-    .role-item {
-        flex-direction: column;
-        align-items: flex-start;
+    .duration-selector small {
+        display: none;
     }
 
-    .app-content {
-        padding: var(--spacing-sm);
+    .action-bar-bottom .btn-danger {
+        margin-left: 0;
+    }
+
+    .action-bar-bottom .btn {
+        flex: 1;
+        min-width: 100px;
+    }
+
+    .modal-content,
+    .modal-content-wide {
+        width: 95%;
+        max-width: 95%;
+        margin: var(--spacing-sm);
+    }
+
+    .toast {
+        max-width: calc(100vw - var(--spacing-md) * 2);
+    }
+
+    .toast-error-detail {
+        max-width: calc(100vw - var(--spacing-md) * 2);
+    }
+
+    .login-card {
+        max-width: 90%;
+        padding: 32px 24px;
+    }
+}
+
+/* Mobile portrait */
+@media (max-width: 480px) {
+    .app-header {
+        padding: var(--spacing-xs) var(--spacing-sm);
+    }
+
+    .header-logo {
+        height: 20px;
+    }
+
+    .section-title-bar h2 {
+        font-size: 13px;
+    }
+
+    .section-search {
+        width: 90px;
+        padding: 3px 6px;
+    }
+
+    .role-count {
+        font-size: 11px;
+    }
+
+    .roles-table {
+        font-size: 11px;
+    }
+
+    .type-badge {
+        font-size: 9px;
+        padding: 1px 4px;
+    }
+
+    .col-scope { display: none; }
+    .roles-table th.col-scope { display: none; }
+
+    .action-bar-bottom {
+        flex-direction: column;
+    }
+
+    .action-bar-bottom .btn {
+        width: 100%;
+    }
+
+    .action-bar-bottom .btn-danger {
+        margin-left: 0;
+    }
+
+    .modal-role-list table {
+        font-size: 11px;
+    }
+
+    .form-textarea {
+        rows: 2;
     }
 }
