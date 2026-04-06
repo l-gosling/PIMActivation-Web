@@ -4,6 +4,10 @@
 .vscode
 .env
 .env.local
+.env.*
+.claude/
+certs/
+config/
 logs/
 test/
 tests/

@@ -58,12 +58,19 @@ function Get-AllConfig {
 function Test-RequiredConfig {
     [CmdletBinding()]
     param()
-    $config = Get-AllConfig
-    $required = @('EntraTenantId', 'EntraClientId', 'EntraClientSecret')
-    
-    foreach ($key in $required) {
-        if ([string]::IsNullOrWhiteSpace($config[$key])) {
-            throw "Missing required configuration: $key (env: $(($key -replace '([a-z])([A-Z])', '$1_$2').ToUpper()))"
+    $placeholders = @('your-tenant-id', 'your-client-id', 'your-client-secret', 'your-app-client-id', 'your-app-client-secret')
+    $required = @(
+        @{ Env = 'ENTRA_TENANT_ID';     Value = $env:ENTRA_TENANT_ID }
+        @{ Env = 'ENTRA_CLIENT_ID';     Value = $env:ENTRA_CLIENT_ID }
+        @{ Env = 'ENTRA_CLIENT_SECRET'; Value = $env:ENTRA_CLIENT_SECRET }
+    )
+
+    foreach ($item in $required) {
+        if ([string]::IsNullOrWhiteSpace($item.Value)) {
+            throw "Missing required configuration: $($item.Env). Create a .env file from .env.example and set your Entra ID credentials."
+        }
+        if ($item.Value -in $placeholders) {
+            throw "Configuration $($item.Env) still has the placeholder value '$($item.Value)'. Update your .env file with real Entra ID credentials."
         }
     }
 }

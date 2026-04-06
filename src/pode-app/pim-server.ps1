@@ -51,6 +51,16 @@ Initialize-Logger -Level $LogLevel -Path '/var/log/pim/pode.log'
 Write-Log -Message "Starting PIM Activation Web Service" -Level 'Information'
 Write-Log -Message "Mode: $Mode, Port: $Port, LogLevel: $LogLevel" -Level 'Information'
 
+# Validate required configuration before starting
+try {
+    Test-RequiredConfig
+}
+catch {
+    Write-Log -Message $_.Exception.Message -Level 'Error'
+    Write-Error $_.Exception.Message
+    exit 1
+}
+
 # Start Pode server
 Start-PodeServer -Name 'PIM-Activation' -Threads 5 {
 
