@@ -122,7 +122,7 @@ function Invoke-AuthLogin {
         $query['response_mode'] = 'query'
         $query['scope']         = $oauth.Scopes
         $query['state']         = $state
-        $query['prompt']        = 'select_account'
+        # No prompt — use SSO if a session exists, otherwise Entra shows login automatically
 
         Move-PodeResponseUrl -Url "$($oauth.AuthorizeUrl)?$($query.ToString())"
     }
