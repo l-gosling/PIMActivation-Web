@@ -12,20 +12,37 @@
 <#
 .SYNOPSIS
     Generate a cryptographically secure random string
+.PARAMETER ByteLength
+    Number of random bytes to generate. The output string will be longer
+    due to Base64 encoding. Default is 48 bytes (~64 characters).
 #>
 function New-SecureToken {
-    param([int]$ByteLength = 48)
+    [CmdletBinding()]
+    param(
+        [int]$ByteLength = 48
+    )
+
     $bytes = [byte[]]::new($ByteLength)
     [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+
+    # Strip +, /, = from Base64 to produce a URL-safe token that works in cookies without encoding
     return ([Convert]::ToBase64String($bytes) -replace '[+/=]', '')
 }
 
 <#
 .SYNOPSIS
-    Helper to get/set the sessions hashtable from Pode shared state
+    Retrieve a session from Pode shared state by its ID
+.PARAMETER SessionId
+    The cryptographic session token stored in the client cookie
 #>
 function Get-AuthSession {
-    param([string]$SessionId)
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$SessionId
+    )
+
     $sessions = Get-PodeState -Name 'AuthSessions'
     if ($sessions -and $sessions.ContainsKey($SessionId)) {
         return $sessions[$SessionId]
@@ -33,8 +50,26 @@ function Get-AuthSession {
     return $null
 }
 
+<#
+.SYNOPSIS
+    Store or update a session in Pode shared state (thread-safe via Lock-PodeObject)
+.PARAMETER SessionId
+    The cryptographic session token
+.PARAMETER Data
+    Hashtable containing session data (UserId, Email, Name, AccessToken, etc.)
+#>
 function Set-AuthSession {
-    param([string]$SessionId, [hashtable]$Data)
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$SessionId,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [hashtable]$Data
+    )
+
     Lock-PodeObject -Object (Get-PodeState -Name 'AuthSessions') -ScriptBlock {
         $sessions = Get-PodeState -Name 'AuthSessions'
         $sessions[$SessionId] = $Data
@@ -42,8 +77,20 @@ function Set-AuthSession {
     }
 }
 
+<#
+.SYNOPSIS
+    Remove a session from Pode shared state (thread-safe via Lock-PodeObject)
+.PARAMETER SessionId
+    The cryptographic session token to remove
+#>
 function Remove-AuthSession {
-    param([string]$SessionId)
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$SessionId
+    )
+
     Lock-PodeObject -Object (Get-PodeState -Name 'AuthSessions') -ScriptBlock {
         $sessions = Get-PodeState -Name 'AuthSessions'
         $sessions.Remove($SessionId) | Out-Null
@@ -56,6 +103,9 @@ function Remove-AuthSession {
     Clean up expired sessions (called by timer)
 #>
 function Clear-ExpiredAuthSessions {
+    [CmdletBinding()]
+    param()
+
     $now = Get-Date
     Lock-PodeObject -Object (Get-PodeState -Name 'AuthSessions') -ScriptBlock {
         $sessions = Get-PodeState -Name 'AuthSessions'
@@ -65,7 +115,7 @@ function Clear-ExpiredAuthSessions {
         }
         if ($expired.Count -gt 0) {
             Set-PodeState -Name 'AuthSessions' -Value $sessions | Out-Null
-            Write-Host "Cleaned up $($expired.Count) expired session(s)"
+            Write-Log -Message "Cleaned up $($expired.Count) expired session(s)" -Level 'Information'
         }
     }
 }
@@ -75,6 +125,9 @@ function Clear-ExpiredAuthSessions {
     Get Entra ID OAuth configuration from environment
 #>
 function Get-OAuthConfig {
+    [CmdletBinding()]
+    param()
+
     $tenantId = $env:ENTRA_TENANT_ID
     $clientId = $env:ENTRA_CLIENT_ID
     $clientSecret = $env:ENTRA_CLIENT_SECRET
@@ -94,9 +147,17 @@ function Get-OAuthConfig {
 <#
 .SYNOPSIS
     Helper to extract cookie value (Pode returns hashtable or string depending on version)
+.PARAMETER Name
+    The name of the cookie to retrieve
 #>
 function Get-CookieValue {
-    param([string]$Name)
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Name
+    )
+
     $cookie = Get-PodeCookie -Name $Name
     if ($cookie -is [hashtable]) { return $cookie.Value }
     return "$cookie"
@@ -104,10 +165,57 @@ function Get-CookieValue {
 
 <#
 .SYNOPSIS
+    Get the current request's session context (session, tokens, and user ID)
+.DESCRIPTION
+    Consolidates the cookie lookup, session retrieval, and token extraction
+    into a single call. Returns a hashtable with all session-related values,
+    using $null for any missing piece.
+#>
+function Get-CurrentSessionContext {
+    [CmdletBinding()]
+    param()
+
+    $sessionId = Get-CookieValue -Name 'pim_session'
+    $session = if ($sessionId) { Get-AuthSession -SessionId $sessionId } else { $null }
+
+    return @{
+        SessionId        = $sessionId
+        Session          = $session
+        AccessToken      = if ($session) { $session.AccessToken } else { $null }
+        AzureAccessToken = if ($session) { $session.AzureAccessToken } else { $null }
+        UserId           = if ($session) { $session.UserId } else { $null }
+    }
+}
+
+<#
+.SYNOPSIS
+    Verify the current request is authenticated, returning a 401 JSON response if not
+.DESCRIPTION
+    Checks the pim_session cookie and validates the session exists.
+    Returns $true if the session is valid. Returns $false after writing a
+    401 response, so the caller should 'return' immediately when $false.
+#>
+function Assert-AuthenticatedSession {
+    [CmdletBinding()]
+    param()
+
+    $ctx = Get-CurrentSessionContext
+    if (-not $ctx.SessionId -or -not $ctx.Session) {
+        Write-PodeJsonResponse -Value @{ success = $false; error = 'Not authenticated' } -StatusCode 401
+        return $false
+    }
+    return $true
+}
+
+<#
+.SYNOPSIS
     Login route - redirects browser to Entra ID
 #>
 function Invoke-AuthLogin {
-    param([object]$Request)
+    [CmdletBinding()]
+    param(
+        [object]$Request
+    )
 
     try {
         $oauth = Get-OAuthConfig
@@ -122,7 +230,7 @@ function Invoke-AuthLogin {
         $query['response_mode'] = 'query'
         $query['scope']         = $oauth.Scopes
         $query['state']         = $state
-        # No prompt — use SSO if a session exists, otherwise Entra shows login automatically
+        # Omit prompt= so Entra reuses an existing SSO session; falls back to interactive login automatically
 
         Move-PodeResponseUrl -Url "$($oauth.AuthorizeUrl)?$($query.ToString())"
     }
@@ -136,7 +244,10 @@ function Invoke-AuthLogin {
     OAuth callback - exchanges authorization code for tokens
 #>
 function Invoke-AuthCallback {
-    param([object]$Request)
+    [CmdletBinding()]
+    param(
+        [object]$Request
+    )
 
     try {
         $code      = $WebEvent.Query['code']
@@ -161,19 +272,18 @@ function Invoke-AuthCallback {
             return
         }
 
-        # Exchange code for tokens via curl (IPv6 workaround on Alpine)
+        # Exchange authorization code for tokens
         $oauth = Get-OAuthConfig
-        $curlArgs = @(
-            '-s', '-4', '-X', 'POST', $oauth.TokenUrl,
-            '-d', "client_id=$($oauth.ClientId)",
-            '-d', "client_secret=$([System.Web.HttpUtility]::UrlEncode($oauth.ClientSecret))",
-            '-d', "code=$([System.Web.HttpUtility]::UrlEncode($code))",
-            '-d', "redirect_uri=$([System.Web.HttpUtility]::UrlEncode($oauth.RedirectUri))",
-            '-d', 'grant_type=authorization_code',
-            '-d', "scope=$([System.Web.HttpUtility]::UrlEncode($oauth.Scopes))"
-        )
-        $tokenJson = & curl @curlArgs 2>&1
-        $tokenResponse = $tokenJson | ConvertFrom-Json
+        $tokenBody = @{
+            client_id     = $oauth.ClientId
+            client_secret = $oauth.ClientSecret
+            code          = $code
+            redirect_uri  = $oauth.RedirectUri
+            grant_type    = 'authorization_code'
+            scope         = $oauth.Scopes
+        }
+        $tokenResult = Invoke-WebRequest -Uri $oauth.TokenUrl -Method Post -Body $tokenBody -ContentType 'application/x-www-form-urlencoded' -SkipHttpErrorCheck
+        $tokenResponse = $tokenResult.Content | ConvertFrom-Json
 
         if ($tokenResponse.error) {
             throw "Token exchange failed: $($tokenResponse.error_description ?? $tokenResponse.error)"
@@ -183,6 +293,8 @@ function Invoke-AuthCallback {
         $jwt = $tokenResponse.id_token ?? $tokenResponse.access_token
         if (-not $jwt) { throw "No token in response" }
 
+        # JWT uses Base64url encoding (RFC 7515): '-' instead of '+', '_' instead of '/',
+        # and padding '=' characters are omitted. Restore standard Base64 before decoding.
         $jwtParts = $jwt -split '\.'
         $payloadBase64 = $jwtParts[1] -replace '-', '+' -replace '_', '/'
         switch ($payloadBase64.Length % 4) {
@@ -197,26 +309,25 @@ function Invoke-AuthCallback {
         $refreshToken = $tokenResponse.refresh_token
         if ($refreshToken) {
             try {
-                $azCurlArgs = @(
-                    '-s', '-4', '-X', 'POST', $oauth.TokenUrl,
-                    '-d', "client_id=$($oauth.ClientId)",
-                    '-d', "client_secret=$([System.Web.HttpUtility]::UrlEncode($oauth.ClientSecret))",
-                    '-d', "refresh_token=$([System.Web.HttpUtility]::UrlEncode($refreshToken))",
-                    '-d', 'grant_type=refresh_token',
-                    '-d', "scope=$([System.Web.HttpUtility]::UrlEncode('https://management.azure.com/.default'))"
-                )
-                $azTokenJson = & curl @azCurlArgs 2>&1
-                $azTokenResponse = $azTokenJson | ConvertFrom-Json
+                $azTokenBody = @{
+                    client_id     = $oauth.ClientId
+                    client_secret = $oauth.ClientSecret
+                    refresh_token = $refreshToken
+                    grant_type    = 'refresh_token'
+                    scope         = 'https://management.azure.com/.default'
+                }
+                $azTokenResult = Invoke-WebRequest -Uri $oauth.TokenUrl -Method Post -Body $azTokenBody -ContentType 'application/x-www-form-urlencoded' -SkipHttpErrorCheck
+                $azTokenResponse = $azTokenResult.Content | ConvertFrom-Json
                 if (-not $azTokenResponse.error) {
                     $azureToken = $azTokenResponse.access_token
-                    Write-Host "Azure Management token acquired"
+                    Write-Log -Message "Azure Management token acquired" -Level 'Debug'
                 }
                 else {
-                    Write-Host "Azure token exchange failed (non-fatal)"
+                    Write-Log -Message "Azure token exchange failed (non-fatal)" -Level 'Warning'
                 }
             }
             catch {
-                Write-Host "Azure token exchange failed (non-fatal): $($_.Exception.Message)"
+                Write-Log -Message "Azure token exchange failed (non-fatal): $($_.Exception.Message)" -Level 'Warning'
             }
         }
 
@@ -233,7 +344,7 @@ function Invoke-AuthCallback {
             CreatedAt         = Get-Date
         }
 
-        Write-Host "Session created for: $($claims.name)"
+        Write-Log -Message "Session created for: $($claims.name)" -Level 'Information'
 
         $sessionTimeout = [int]($env:SESSION_TIMEOUT ?? '3600')
         $isHttps = (Test-Path ($env:PODE_CERT_PATH ?? '/etc/pim-certs/cert.pem'))
@@ -243,7 +354,7 @@ function Invoke-AuthCallback {
         Move-PodeResponseUrl -Url '/'
     }
     catch {
-        Write-Host "OAuth callback error occurred"
+        Write-Log -Message "OAuth callback error: $($_.Exception.Message)" -Level 'Error'
         Move-PodeResponseUrl -Url "/?error=$([System.Web.HttpUtility]::UrlEncode($_.Exception.Message))"
     }
 }
@@ -253,7 +364,10 @@ function Invoke-AuthCallback {
     Logout route handler
 #>
 function Invoke-AuthLogout {
-    param([object]$Request)
+    [CmdletBinding()]
+    param(
+        [object]$Request
+    )
 
     try {
         $sessionId = Get-CookieValue -Name 'pim_session'
@@ -276,7 +390,10 @@ function Invoke-AuthLogout {
     Get current user info from session
 #>
 function Invoke-AuthMe {
-    param([object]$Request)
+    [CmdletBinding()]
+    param(
+        [object]$Request
+    )
 
     try {
         $sessionId = Get-CookieValue -Name 'pim_session'
@@ -297,7 +414,7 @@ function Invoke-AuthMe {
         if ($session.ExpiresAt -lt (Get-Date)) {
             Remove-AuthSession -SessionId $sessionId
             Remove-PodeCookie -Name 'pim_session'
-                Write-PodeJsonResponse -Value @{ success = $false; error = 'Session expired' } -StatusCode 401
+            Write-PodeJsonResponse -Value @{ success = $false; error = 'Session expired' } -StatusCode 401
             return
         }
 
@@ -320,11 +437,10 @@ function Invoke-AuthMe {
     Get the access token for the current session (used by PIM API calls)
 #>
 function Get-SessionAccessToken {
-    $sessionId = Get-CookieValue -Name 'pim_session'
-    if (-not $sessionId) { return $null }
+    [CmdletBinding()]
+    param()
 
-    $session = Get-AuthSession -SessionId $sessionId
-    if (-not $session -or $session.ExpiresAt -lt (Get-Date)) { return $null }
-
-    return $session.AccessToken
+    $ctx = Get-CurrentSessionContext
+    if (-not $ctx.Session -or $ctx.Session.ExpiresAt -lt (Get-Date)) { return $null }
+    return $ctx.AccessToken
 }

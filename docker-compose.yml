@@ -36,6 +36,9 @@ services:
       - ./certs:/etc/pim-certs:ro
       - pim-data:/var/pim-data
       - ./logs:/var/log/pim:rw
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     networks:
       - pim-network
     restart: unless-stopped

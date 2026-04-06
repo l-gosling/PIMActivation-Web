@@ -61,11 +61,11 @@ Start-PodeServer -Name 'PIM-Activation' -Threads 5 {
 
     if ((Test-Path $certPath) -and (Test-Path $keyPath)) {
         Add-PodeEndpoint -Address * -Port $serverPort -Protocol Https -Certificate $certPath -CertificateKey $keyPath
-        Write-Host "HTTPS endpoint configured on port $serverPort"
+        Write-Log -Message "HTTPS endpoint configured on port $serverPort" -Level 'Information'
     }
     else {
         Add-PodeEndpoint -Address * -Port $serverPort -Protocol Http
-        Write-Host "HTTP endpoint configured on port $serverPort (no certificate found)"
+        Write-Log -Message "HTTP endpoint configured on port $serverPort (no certificate found)" -Level 'Information'
     }
 
     # Import scripts into Pode route runspaces so handler functions are available
@@ -157,5 +157,5 @@ Start-PodeServer -Name 'PIM-Activation' -Threads 5 {
         Add-PodeStaticRoute -Path '/' -Source $publicPath -Defaults @('index.html')
     }
 
-    Write-Host "PIM Activation Web Service started on port $serverPort"
+    Write-Log -Message "PIM Activation Web Service started on port $serverPort" -Level 'Information'
 }

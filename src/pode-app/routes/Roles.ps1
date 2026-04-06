@@ -9,47 +9,55 @@
 
 <#
 .SYNOPSIS
+    Determine whether Azure Resource roles should be shown
+.DESCRIPTION
+    Returns $true only if Azure roles are enabled in the server config AND
+    the current user has not disabled them in their preferences.
+.PARAMETER ConfigEnabled
+    Whether INCLUDE_AZURE_RESOURCES is true in the server configuration
+#>
+function Get-AzureRoleVisibility {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [bool]$ConfigEnabled
+    )
+
+    if (-not $ConfigEnabled) { return $false }
+
+    $ctx = Get-CurrentSessionContext
+    if ($ctx.Session) {
+        $prefs = Read-UserPreferences -UserId $ctx.UserId
+        if ($prefs.ContainsKey('showAzureRoles') -and -not $prefs.showAzureRoles) {
+            return $false
+        }
+    }
+    return $true
+}
+
+<#
+.SYNOPSIS
     Get eligible roles for the current user
 #>
 function Invoke-GetEligibleRoles {
+    [CmdletBinding()]
     param(
-        [object]
-        $Request
+        [object]$Request
     )
 
     try {
-        $sessionId = Get-CookieValue -Name 'pim_session'
-        if (-not $sessionId -or -not (Get-AuthSession -SessionId $sessionId)) {
-            Write-PodeJsonResponse -Value @{ success = $false; error = 'Not authenticated' } -StatusCode 401
-            return
-        }
+        if (-not (Assert-AuthenticatedSession)) { return }
 
         $config = Get-AllConfig
-
-        # Azure roles: only if enabled in env AND user hasn't disabled in preferences
-        $showAzure = $config.IncludeAzureResources
-        Write-Host "Azure config: IncludeAzureResources=$showAzure"
-        if ($showAzure) {
-            $sessionId = Get-CookieValue -Name 'pim_session'
-            $session = if ($sessionId) { Get-AuthSession -SessionId $sessionId } else { $null }
-            if ($session) {
-                $prefs = Read-UserPreferences -UserId $session.UserId
-                $hasKey = $prefs.ContainsKey('showAzureRoles')
-                $val = if ($hasKey) { $prefs.showAzureRoles } else { 'N/A' }
-                Write-Host "Azure prefs: hasKey=$hasKey val=$val"
-                if ($hasKey -and -not $prefs.showAzureRoles) {
-                    $showAzure = $false
-                }
-            }
-        }
-        Write-Host "Azure final: showAzure=$showAzure"
+        $showAzure = Get-AzureRoleVisibility -ConfigEnabled $config.IncludeAzureResources
+        Write-Log -Message "Eligible roles request: Azure=$showAzure" -Level 'Debug'
 
         $result = Get-PIMEligibleRolesForWeb -UserContext $WebEvent.Auth -IncludeEntraRoles:$config.IncludeEntraRoles -IncludeGroups:$config.IncludeGroups -IncludeAzureResources:$showAzure
 
         Write-PodeJsonResponse -Value $result -StatusCode 200
     }
     catch {
-        Write-Host "Route error: $($_.Exception.Message)"
+        Write-Log -Message "Route error (eligible): $($_.Exception.Message)" -Level 'Error'
         Write-PodeJsonResponse -Value @{
             success = $false
             error   = 'An internal error occurred'
@@ -62,38 +70,23 @@ function Invoke-GetEligibleRoles {
     Get active roles for the current user
 #>
 function Invoke-GetActiveRoles {
+    [CmdletBinding()]
     param(
-        [object]
-        $Request
+        [object]$Request
     )
 
     try {
-        $sessionId = Get-CookieValue -Name 'pim_session'
-        if (-not $sessionId -or -not (Get-AuthSession -SessionId $sessionId)) {
-            Write-PodeJsonResponse -Value @{ success = $false; error = 'Not authenticated' } -StatusCode 401
-            return
-        }
+        if (-not (Assert-AuthenticatedSession)) { return }
 
         $config = Get-AllConfig
-
-        $showAzure = $config.IncludeAzureResources
-        if ($showAzure) {
-            $sessionId = Get-CookieValue -Name 'pim_session'
-            $session = if ($sessionId) { Get-AuthSession -SessionId $sessionId } else { $null }
-            if ($session) {
-                $prefs = Read-UserPreferences -UserId $session.UserId
-                if ($prefs.ContainsKey('showAzureRoles') -and -not $prefs.showAzureRoles) {
-                    $showAzure = $false
-                }
-            }
-        }
+        $showAzure = Get-AzureRoleVisibility -ConfigEnabled $config.IncludeAzureResources
 
         $result = Get-PIMActiveRolesForWeb -UserContext $WebEvent.Auth -IncludeEntraRoles:$config.IncludeEntraRoles -IncludeGroups:$config.IncludeGroups -IncludeAzureResources:$showAzure
 
         Write-PodeJsonResponse -Value $result -StatusCode 200
     }
     catch {
-        Write-Host "Route error: $($_.Exception.Message)"
+        Write-Log -Message "Route error (active): $($_.Exception.Message)" -Level 'Error'
         Write-PodeJsonResponse -Value @{
             success = $false
             error   = 'An internal error occurred'
@@ -106,17 +99,14 @@ function Invoke-GetActiveRoles {
     Activate a role
 #>
 function Invoke-ActivateRole {
+    [CmdletBinding()]
     param(
         [object]$Request,
         [object]$Body
     )
 
     try {
-        $sessionId = Get-CookieValue -Name 'pim_session'
-        if (-not $sessionId -or -not (Get-AuthSession -SessionId $sessionId)) {
-            Write-PodeJsonResponse -Value @{ success = $false; error = 'Not authenticated' } -StatusCode 401
-            return
-        }
+        if (-not (Assert-AuthenticatedSession)) { return }
 
         $data = $WebEvent.Data
         $roleId = $data.roleId
@@ -146,7 +136,7 @@ function Invoke-ActivateRole {
         }
     }
     catch {
-        Write-Host "Activate error: $($_.Exception.Message)"
+        Write-Log -Message "Activate error: $($_.Exception.Message)" -Level 'Error'
         Write-PodeJsonResponse -Value @{
             success = $false
             error   = $_.Exception.Message
@@ -159,17 +149,14 @@ function Invoke-ActivateRole {
     Deactivate a role
 #>
 function Invoke-DeactivateRole {
+    [CmdletBinding()]
     param(
         [object]$Request,
         [object]$Body
     )
 
     try {
-        $sessionId = Get-CookieValue -Name 'pim_session'
-        if (-not $sessionId -or -not (Get-AuthSession -SessionId $sessionId)) {
-            Write-PodeJsonResponse -Value @{ success = $false; error = 'Not authenticated' } -StatusCode 401
-            return
-        }
+        if (-not (Assert-AuthenticatedSession)) { return }
 
         $data = $WebEvent.Data
         $roleId = $data.roleId
@@ -194,7 +181,7 @@ function Invoke-DeactivateRole {
         }
     }
     catch {
-        Write-Host "Deactivate error: $($_.Exception.Message)"
+        Write-Log -Message "Deactivate error: $($_.Exception.Message)" -Level 'Error'
         Write-PodeJsonResponse -Value @{
             success = $false
             error   = $_.Exception.Message
@@ -207,20 +194,15 @@ function Invoke-DeactivateRole {
     Get role policies
 #>
 function Invoke-GetRolePolicies {
+    [CmdletBinding()]
     param(
-        [object]
-        $Request,
+        [object]$Request,
 
-        [string]
-        $RoleId
+        [string]$RoleId
     )
 
     try {
-        $sessionId = Get-CookieValue -Name 'pim_session'
-        if (-not $sessionId -or -not (Get-AuthSession -SessionId $sessionId)) {
-            Write-PodeJsonResponse -Value @{ success = $false; error = 'Not authenticated' } -StatusCode 401
-            return
-        }
+        if (-not (Assert-AuthenticatedSession)) { return }
 
         if ([string]::IsNullOrWhiteSpace($RoleId) -or -not ($RoleId -as [guid])) {
             Write-PodeJsonResponse -Value @{
@@ -235,11 +217,10 @@ function Invoke-GetRolePolicies {
         Write-PodeJsonResponse -Value $result -StatusCode 200
     }
     catch {
-        Write-Host "Route error: $($_.Exception.Message)"
+        Write-Log -Message "Route error (policies): $($_.Exception.Message)" -Level 'Error'
         Write-PodeJsonResponse -Value @{
             success = $false
             error   = 'An internal error occurred'
         } -StatusCode 500
     }
 }
-

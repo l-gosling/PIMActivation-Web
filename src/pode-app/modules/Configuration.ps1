@@ -12,12 +12,13 @@
     Get configuration value
 #>
 function Get-ConfigValue {
+    [CmdletBinding()]
     param(
-        [string]
-        $Key,
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Key,
 
-        [string]
-        $DefaultValue = $null
+        [string]$DefaultValue = $null
     )
 
     $envKey = $Key -replace '\s+', '_'
@@ -31,6 +32,8 @@ function Get-ConfigValue {
     Get all configuration as hashtable
 #>
 function Get-AllConfig {
+    [CmdletBinding()]
+    param()
     return @{
         EntraTenantId       = Get-ConfigValue 'ENTRA_TENANT_ID'
         EntraClientId       = Get-ConfigValue 'ENTRA_CLIENT_ID'
@@ -52,6 +55,8 @@ function Get-AllConfig {
     Validate required configuration
 #>
 function Test-RequiredConfig {
+    [CmdletBinding()]
+    param()
     $config = Get-AllConfig
     $required = @('EntraTenantId', 'EntraClientId', 'EntraClientSecret')
     

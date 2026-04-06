@@ -4,7 +4,8 @@
 .SYNOPSIS
     Configuration API routes
 .DESCRIPTION
-    Provides feature and theme configuration to the frontend
+    Provides feature and theme configuration to the frontend,
+    and manages per-user preference storage.
 #>
 
 <#
@@ -12,9 +13,9 @@
     Get feature configuration
 #>
 function Invoke-GetFeatureConfig {
+    [CmdletBinding()]
     param(
-        [object]
-        $Request
+        [object]$Request
     )
 
     try {
@@ -46,9 +47,9 @@ function Invoke-GetFeatureConfig {
     Get theme configuration
 #>
 function Invoke-GetThemeConfig {
+    [CmdletBinding()]
     param(
-        [object]
-        $Request
+        [object]$Request
     )
 
     try {
@@ -83,9 +84,15 @@ function Invoke-GetThemeConfig {
     }
 }
 
-function Get-PreferencesPath { return '/var/pim-data/preferences' }
+function Get-PreferencesPath {
+    [CmdletBinding()]
+    param()
+    return '/var/pim-data/preferences'
+}
 
 function Get-DefaultPreferences {
+    [CmdletBinding()]
+    param()
     return @{
         theme            = 'auto'
         sortOrder        = 'name'
@@ -99,6 +106,8 @@ function Get-DefaultPreferences {
 }
 
 function Get-AllowedPreferences {
+    [CmdletBinding()]
+    param()
     return @{
         theme            = 'string'
         sortOrder        = 'string'
@@ -114,10 +123,21 @@ function Get-AllowedPreferences {
 <#
 .SYNOPSIS
     Get a sanitized filename for a user ID
+.DESCRIPTION
+    Hashes the user ID with SHA256 to produce a safe, deterministic filename.
+    User IDs (GUIDs or UPNs) may contain characters invalid for filenames on some
+    platforms, so hashing avoids filesystem issues.
+.PARAMETER UserId
+    The Entra ID user object ID or UPN
 #>
 function Get-UserPrefsFile {
-    param([string]$UserId)
-    # Hash the user ID to avoid filesystem issues with special chars
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$UserId
+    )
+
     $hash = [System.Security.Cryptography.SHA256]::Create()
     $bytes = [System.Text.Encoding]::UTF8.GetBytes($UserId)
     $hashStr = [BitConverter]::ToString($hash.ComputeHash($bytes)) -replace '-', ''
@@ -126,26 +146,37 @@ function Get-UserPrefsFile {
 
 <#
 .SYNOPSIS
-    Load preferences for a user from disk
+    Load preferences for a user from disk, merged with defaults
+.DESCRIPTION
+    Reads the user's saved preferences JSON file and merges it with the
+    default preferences so newly added preference keys are always present.
+    Only keys listed in Get-AllowedPreferences are kept.
+.PARAMETER UserId
+    The Entra ID user object ID
 #>
 function Read-UserPreferences {
-    param([string]$UserId)
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$UserId
+    )
 
     $file = Get-UserPrefsFile -UserId $UserId
     if (Test-Path $file) {
         try {
             $saved = Get-Content $file -Raw | ConvertFrom-Json -AsHashtable
-            # Merge with defaults so new preference keys are always present
-            $merged = (Get-DefaultPreferences)
+            $merged = Get-DefaultPreferences
+            $allowedPrefs = Get-AllowedPreferences
             foreach ($key in $saved.Keys) {
-                if ((Get-AllowedPreferences).ContainsKey($key)) {
+                if ($allowedPrefs.ContainsKey($key)) {
                     $merged[$key] = $saved[$key]
                 }
             }
             return $merged
         }
         catch {
-            Write-Host "Failed to read preferences for user: $($_.Exception.Message)"
+            Write-Log -Message "Failed to read preferences for user: $($_.Exception.Message)" -Level 'Warning'
         }
     }
     return (Get-DefaultPreferences)
@@ -154,19 +185,37 @@ function Read-UserPreferences {
 <#
 .SYNOPSIS
     Save preferences for a user to disk
+.DESCRIPTION
+    Validates and type-casts incoming preference values against the allowed
+    preference schema, then merges with existing preferences to preserve
+    keys not included in the current update.
+.PARAMETER UserId
+    The Entra ID user object ID
+.PARAMETER Preferences
+    Hashtable of preference key/value pairs to save
 #>
 function Write-UserPreferences {
-    param([string]$UserId, [hashtable]$Preferences)
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$UserId,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [hashtable]$Preferences
+    )
 
     $file = Get-UserPrefsFile -UserId $UserId
+    $allowedPrefs = Get-AllowedPreferences
 
     # Validate and filter to allowed keys only
     $clean = @{}
     foreach ($key in $Preferences.Keys) {
-        if (-not (Get-AllowedPreferences).ContainsKey($key)) { continue }
+        if (-not $allowedPrefs.ContainsKey($key)) { continue }
 
         $val = $Preferences[$key]
-        switch ((Get-AllowedPreferences)[$key]) {
+        switch ($allowedPrefs[$key]) {
             'int'    { $clean[$key] = [int]$val }
             'bool'   { $clean[$key] = [bool]$val }
             'string' { $clean[$key] = [string]$val }
@@ -187,13 +236,15 @@ function Write-UserPreferences {
     Get user preferences
 #>
 function Invoke-GetUserPreferences {
-    param([object]$Request)
+    [CmdletBinding()]
+    param(
+        [object]$Request
+    )
 
     try {
-        $sessionId = Get-CookieValue -Name 'pim_session'
-        $session = if ($sessionId) { Get-AuthSession -SessionId $sessionId } else { $null }
+        $ctx = Get-CurrentSessionContext
 
-        if (-not $session) {
+        if (-not $ctx.Session) {
             # Return defaults for unauthenticated users
             Write-PodeJsonResponse -Value @{
                 success     = $true
@@ -202,7 +253,7 @@ function Invoke-GetUserPreferences {
             return
         }
 
-        $preferences = Read-UserPreferences -UserId $session.UserId
+        $preferences = Read-UserPreferences -UserId $ctx.UserId
 
         Write-PodeJsonResponse -Value @{
             success     = $true
@@ -222,13 +273,16 @@ function Invoke-GetUserPreferences {
     Update user preferences
 #>
 function Invoke-UpdateUserPreferences {
-    param([object]$Request, [object]$Body)
+    [CmdletBinding()]
+    param(
+        [object]$Request,
+        [object]$Body
+    )
 
     try {
-        $sessionId = Get-CookieValue -Name 'pim_session'
-        $session = if ($sessionId) { Get-AuthSession -SessionId $sessionId } else { $null }
+        $ctx = Get-CurrentSessionContext
 
-        if (-not $session) {
+        if (-not $ctx.Session) {
             Write-PodeJsonResponse -Value @{
                 success = $false
                 error   = 'Not authenticated'
@@ -256,7 +310,7 @@ function Invoke-UpdateUserPreferences {
             }
         }
 
-        Write-UserPreferences -UserId $session.UserId -Preferences $prefs
+        Write-UserPreferences -UserId $ctx.UserId -Preferences $prefs
 
         Write-PodeJsonResponse -Value @{
             success = $true
@@ -270,4 +324,3 @@ function Invoke-UpdateUserPreferences {
         } -StatusCode 500
     }
 }
-

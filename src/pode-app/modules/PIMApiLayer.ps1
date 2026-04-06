@@ -5,88 +5,114 @@
     PIM API Layer - Microsoft Graph REST API calls for PIM role management
 .DESCRIPTION
     Provides functions to query, activate, and deactivate PIM roles
-    using the Microsoft Graph API. Uses curl for HTTP calls (IPv6 workaround on Alpine).
+    using the Microsoft Graph API and Azure Management API.
+    Uses Invoke-WebRequest for HTTP calls. IPv6 DNS resolution issues on
+    Alpine Linux are mitigated by setting DOTNET_SYSTEM_NET_DISABLEIPV6=1
+    in the container environment.
 #>
 
-function Get-GraphBaseUrl { return 'https://graph.microsoft.com/v1.0' }
+function Get-GraphBaseUrl {
+    [CmdletBinding()]
+    param()
+    return 'https://graph.microsoft.com/v1.0'
+}
+
+function Get-AzureBaseUrl {
+    [CmdletBinding()]
+    param()
+    return 'https://management.azure.com'
+}
 
 <#
 .SYNOPSIS
     Refresh the Graph access token using the stored refresh token
+.DESCRIPTION
+    Retrieves the current session's refresh token, exchanges it for a new
+    access token via the Entra ID token endpoint, and updates the session.
+    Returns the new access token on success, or $null on failure.
 #>
 function Update-SessionTokens {
-    $sessionId = Get-CookieValue -Name 'pim_session'
-    if (-not $sessionId) { return $null }
-    $session = Get-AuthSession -SessionId $sessionId
+    [CmdletBinding()]
+    param()
+
+    $ctx = Get-CurrentSessionContext
+    if (-not $ctx.SessionId) { return $null }
+    $session = $ctx.Session
     if (-not $session -or -not $session.RefreshToken) { return $null }
 
     $oauth = Get-OAuthConfig
-    $curlArgs = @(
-        '-s', '-4', '-X', 'POST', $oauth.TokenUrl,
-        '-d', "client_id=$($oauth.ClientId)",
-        '-d', "client_secret=$([System.Web.HttpUtility]::UrlEncode($oauth.ClientSecret))",
-        '-d', "refresh_token=$([System.Web.HttpUtility]::UrlEncode($session.RefreshToken))",
-        '-d', 'grant_type=refresh_token',
-        '-d', "scope=$([System.Web.HttpUtility]::UrlEncode($oauth.Scopes))"
-    )
-    $tokenJson = & curl @curlArgs 2>&1
-    $tokenResponse = $tokenJson | ConvertFrom-Json
+    $tokenBody = @{
+        client_id     = $oauth.ClientId
+        client_secret = $oauth.ClientSecret
+        refresh_token = $session.RefreshToken
+        grant_type    = 'refresh_token'
+        scope         = $oauth.Scopes
+    }
+    $tokenResult = Invoke-WebRequest -Uri $oauth.TokenUrl -Method Post -Body $tokenBody -ContentType 'application/x-www-form-urlencoded' -SkipHttpErrorCheck
+    $tokenResponse = $tokenResult.Content | ConvertFrom-Json
     if ($tokenResponse.error) { return $null }
 
     # Update session with new tokens
     $session.AccessToken = $tokenResponse.access_token
     if ($tokenResponse.refresh_token) { $session.RefreshToken = $tokenResponse.refresh_token }
     $session.ExpiresAt = (Get-Date).AddSeconds([int]($env:SESSION_TIMEOUT ?? '3600'))
-    Set-AuthSession -SessionId $sessionId -Data $session
-    Write-Host "Graph token refreshed"
+    Set-AuthSession -SessionId $ctx.SessionId -Data $session
+    Write-Log -Message "Graph token refreshed" -Level 'Debug'
 
     return $tokenResponse.access_token
 }
-function Get-AzureBaseUrl { return 'https://management.azure.com' }
 
 <#
 .SYNOPSIS
     Make an Azure Management REST API request
+.PARAMETER AccessToken
+    Bearer token for the Azure Management API
+.PARAMETER Method
+    HTTP method (GET, POST, PUT, PATCH, DELETE). Default: GET
+.PARAMETER Endpoint
+    API path appended to https://management.azure.com
+.PARAMETER Body
+    Optional JSON request body
+.PARAMETER ApiVersion
+    Azure API version query parameter. Default: 2020-10-01
 #>
 function Invoke-AzureApi {
+    [CmdletBinding()]
     param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
         [string]$AccessToken,
+
         [string]$Method = 'GET',
+
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
         [string]$Endpoint,
+
         [string]$Body = $null,
+
         [string]$ApiVersion = '2020-10-01'
     )
 
     $separator = if ($Endpoint -match '\?') { '&' } else { '?' }
     $url = "$(Get-AzureBaseUrl)$Endpoint${separator}api-version=$ApiVersion"
-    $curlArgs = @(
-        '-s', '-4',
-        '-X', $Method,
-        '-H', "Authorization: Bearer $AccessToken",
-        '-H', 'Content-Type: application/json'
-    )
 
-    if ($Body) {
-        $bodyFile = "/tmp/az_body_$([guid]::NewGuid().ToString('N').Substring(0,8)).json"
-        $Body | Set-Content -Path $bodyFile -Encoding UTF8 -NoNewline
-        $curlArgs += @('-d', "@$bodyFile")
+    $params = @{
+        Uri                = $url
+        Method             = $Method
+        Headers            = @{ Authorization = "Bearer $AccessToken" }
+        ContentType        = 'application/json'
+        SkipHttpErrorCheck = $true
     }
+    if ($Body) { $params.Body = $Body }
 
-    try {
-        $curlArgs += $url
-        $rawOutput = & /usr/bin/curl @curlArgs 2>&1
-        $responseText = if ($null -eq $rawOutput) { '' } elseif ($rawOutput -is [array]) { $rawOutput -join "`n" } else { "$rawOutput" }
-        $responseText = $responseText.Trim()
-    }
-    finally {
-        if ($bodyFile -and (Test-Path $bodyFile)) { Remove-Item $bodyFile -Force -ErrorAction SilentlyContinue }
-    }
+    $response = Invoke-WebRequest @params
 
-    if (-not $responseText -or $responseText.Length -eq 0) {
+    if (-not $response.Content -or $response.Content.Length -eq 0) {
         throw "Empty response from Azure API: $Method $Endpoint"
     }
 
-    $result = $responseText | ConvertFrom-Json -AsHashtable
+    $result = $response.Content | ConvertFrom-Json -AsHashtable
 
     if ($result.ContainsKey('error') -and $result.error) {
         throw "Azure API error: $($result.error.message) ($($result.error.code))"
@@ -100,54 +126,62 @@ function Invoke-AzureApi {
     Get Azure session token from the current request
 #>
 function Get-AzureSessionToken {
-    $sessionId = Get-CookieValue -Name 'pim_session'
-    $session = if ($sessionId) { Get-AuthSession -SessionId $sessionId } else { $null }
-    if ($session) { return $session.AzureAccessToken }
+    [CmdletBinding()]
+    param()
+
+    $ctx = Get-CurrentSessionContext
+    if ($ctx.Session) { return $ctx.AzureAccessToken }
     return $null
 }
 
 <#
 .SYNOPSIS
-    Make a Graph API request using curl (IPv6 workaround)
+    Make a Graph API request with automatic token refresh on 401
+.DESCRIPTION
+    If the first call returns InvalidAuthenticationToken, the session's refresh token
+    is exchanged for a new access token and the request is retried once.
+.PARAMETER AccessToken
+    Bearer token for Microsoft Graph
+.PARAMETER Method
+    HTTP method. Default: GET
+.PARAMETER Endpoint
+    API path appended to https://graph.microsoft.com/v1.0
+.PARAMETER Body
+    Optional JSON request body
 #>
 function Invoke-GraphApi {
+    [CmdletBinding()]
     param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
         [string]$AccessToken,
+
         [string]$Method = 'GET',
+
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
         [string]$Endpoint,
+
         [string]$Body = $null
     )
 
     $url = "$(Get-GraphBaseUrl)$Endpoint"
-    $curlArgs = @(
-        '-s', '-4',
-        '-X', $Method,
-        '-H', "Authorization: Bearer $AccessToken",
-        '-H', 'Content-Type: application/json'
-    )
-
-    if ($Body) {
-        $bodyFile = "/tmp/graph_body_$([guid]::NewGuid().ToString('N').Substring(0,8)).json"
-        $Body | Set-Content -Path $bodyFile -Encoding UTF8 -NoNewline
-        $curlArgs += @('-d', "@$bodyFile")
+    $params = @{
+        Uri                = $url
+        Method             = $Method
+        Headers            = @{ Authorization = "Bearer $AccessToken" }
+        ContentType        = 'application/json'
+        SkipHttpErrorCheck = $true
     }
+    if ($Body) { $params.Body = $Body }
 
-    try {
-        $curlArgs += $url
-        $rawOutput = & /usr/bin/curl @curlArgs 2>&1
-        $responseText = if ($null -eq $rawOutput) { '' } elseif ($rawOutput -is [array]) { $rawOutput -join "`n" } else { "$rawOutput" }
-        $responseText = $responseText.Trim()
-    }
-    finally {
-        if ($bodyFile -and (Test-Path $bodyFile)) { Remove-Item $bodyFile -Force -ErrorAction SilentlyContinue }
-    }
+    $response = Invoke-WebRequest @params
 
-    if (-not $responseText -or $responseText.Length -eq 0) {
+    if (-not $response.Content -or $response.Content.Length -eq 0) {
         throw "Empty response from Graph API: $Method $Endpoint"
     }
 
-    # Use -AsHashtable to ensure nested objects have accessible properties
-    $result = $responseText | ConvertFrom-Json -AsHashtable
+    $result = $response.Content | ConvertFrom-Json -AsHashtable
 
     if ($result.ContainsKey('error') -and $result.error) {
         $errorCode = $result.error.code
@@ -157,31 +191,13 @@ function Invoke-GraphApi {
         if ($errorCode -eq 'InvalidAuthenticationToken') {
             $newToken = Update-SessionTokens
             if ($newToken) {
-                # Retry the request with the new token
-                $retryCurlArgs = @(
-                    '-s', '-4', '-X', $Method,
-                    '-H', "Authorization: Bearer $newToken",
-                    '-H', 'Content-Type: application/json'
-                )
-                if ($Body) {
-                    $retryBodyFile = "/tmp/graph_retry_$([guid]::NewGuid().ToString('N').Substring(0,8)).json"
-                    $Body | Set-Content -Path $retryBodyFile -Encoding UTF8 -NoNewline
-                    $retryCurlArgs += @('-d', "@$retryBodyFile")
+                $params.Headers = @{ Authorization = "Bearer $newToken" }
+                $retryResponse = Invoke-WebRequest @params
+                $retryResult = $retryResponse.Content | ConvertFrom-Json -AsHashtable
+                if ($retryResult.ContainsKey('error') -and $retryResult.error) {
+                    throw "Graph API error: $($retryResult.error.message) ($($retryResult.error.code))"
                 }
-                $retryCurlArgs += $url
-                try {
-                    $retryRaw = & /usr/bin/curl @retryCurlArgs 2>&1
-                    $retryText = if ($null -eq $retryRaw) { '' } elseif ($retryRaw -is [array]) { $retryRaw -join "`n" } else { "$retryRaw" }
-                    $retryResult = $retryText.Trim() | ConvertFrom-Json -AsHashtable
-                    if ($retryBodyFile -and (Test-Path $retryBodyFile)) { Remove-Item $retryBodyFile -Force -ErrorAction SilentlyContinue }
-                    if ($retryResult.ContainsKey('error') -and $retryResult.error) {
-                        throw "Graph API error: $($retryResult.error.message) ($($retryResult.error.code))"
-                    }
-                    return $retryResult
-                }
-                finally {
-                    if ($retryBodyFile -and (Test-Path $retryBodyFile)) { Remove-Item $retryBodyFile -Force -ErrorAction SilentlyContinue }
-                }
+                return $retryResult
             }
         }
 
@@ -194,19 +210,220 @@ function Invoke-GraphApi {
 <#
 .SYNOPSIS
     Get the current user's ID from the access token
+.PARAMETER AccessToken
+    Bearer token to call /me endpoint
 #>
 function Get-CurrentUserId {
-    param([string]$AccessToken)
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$AccessToken
+    )
 
     $me = Invoke-GraphApi -AccessToken $AccessToken -Endpoint '/me?$select=id'
     return $me.id
 }
 
+# ────────────────────────────────────────────────────────────────────
+# Helper functions for role data construction (used by both eligible
+# and active role queries to avoid duplicating hashtable layouts)
+# ────────────────────────────────────────────────────────────────────
+
 <#
 .SYNOPSIS
-    Get eligible roles for current user (Entra ID + Groups)
+    Resolve a directory scope ID to a human-readable display string
+.DESCRIPTION
+    Converts a directoryScopeId like '/' to 'Directory' or
+    '/administrativeUnits/<guid>' to 'AU: <displayName>'.
+    Results are cached in the provided AuCache hashtable so each AU
+    is looked up at most once per request.
+.PARAMETER Scope
+    The raw directoryScopeId from the Graph API response
+.PARAMETER AccessToken
+    Bearer token for looking up AU display names
+.PARAMETER AuCache
+    Hashtable mapping AU GUID -> display string. Mutated in place to cache lookups.
+#>
+function Resolve-DirectoryScopeDisplay {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Scope,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$AccessToken,
+
+        [Parameter(Mandatory)]
+        [hashtable]$AuCache
+    )
+
+    if ($Scope -eq '/' -or $Scope -notmatch '/administrativeUnits/(.+)') {
+        return 'Directory'
+    }
+
+    $auId = $Matches[1]
+    if ($AuCache.ContainsKey($auId)) {
+        return $AuCache[$auId]
+    }
+
+    try {
+        $au = Invoke-GraphApi -AccessToken $AccessToken -Endpoint "/directory/administrativeUnits/$auId`?`$select=displayName"
+        $display = "AU: $($au.displayName)"
+    }
+    catch {
+        Write-Log -Message "AU lookup failed for ${auId}: $($_.Exception.Message)" -Level 'Warning'
+        $display = "AU: $auId"
+    }
+
+    $AuCache[$auId] = $display
+    return $display
+}
+
+<#
+.SYNOPSIS
+    Build a standardized Entra role hashtable from a Graph API role assignment/eligibility object
+.PARAMETER RoleData
+    The raw role object from the Graph API response (hashtable via -AsHashtable)
+.PARAMETER Status
+    'Eligible' or 'Active'
+.PARAMETER ScopeDisplay
+    Pre-resolved display string for the directory scope
+.PARAMETER Scope
+    The raw directoryScopeId value
+#>
+function New-EntraRoleEntry {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][hashtable]$RoleData,
+        [Parameter(Mandatory)][ValidateSet('Eligible', 'Active')][string]$Status,
+        [Parameter(Mandatory)][string]$ScopeDisplay,
+        [Parameter(Mandatory)][string]$Scope
+    )
+
+    $roleName = if ($RoleData.roleDefinition) { $RoleData.roleDefinition.displayName } else { "Role $($RoleData.roleDefinitionId)" }
+    return @{
+        id               = $RoleData.roleDefinitionId
+        uid              = "$($RoleData.roleDefinitionId)|$Scope"
+        name             = $roleName
+        type             = 'Entra'
+        status           = $Status
+        source           = 'EntraID'
+        resourceName     = 'Entra ID Directory'
+        scope            = $ScopeDisplay
+        startDateTime    = $RoleData.startDateTime
+        endDateTime      = $RoleData.endDateTime
+        memberType       = ($RoleData.memberType ?? 'Direct')
+        directoryScopeId = $Scope
+        principalId      = $RoleData.principalId
+    }
+}
+
+<#
+.SYNOPSIS
+    Build a standardized Group role hashtable from a Graph API group assignment/eligibility object
+.PARAMETER RoleData
+    The raw group role object from the Graph API response
+.PARAMETER Status
+    'Eligible' or 'Active'
+#>
+function New-GroupRoleEntry {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][hashtable]$RoleData,
+        [Parameter(Mandatory)][ValidateSet('Eligible', 'Active')][string]$Status
+    )
+
+    $groupName = if ($RoleData.group) { $RoleData.group.displayName } else { "Group $($RoleData.groupId)" }
+    $accessId = $RoleData.accessId ?? 'member'
+    # Title-case the accessId for display (e.g., 'member' -> 'Member')
+    $accessLabel = ([string]$accessId).Substring(0, 1).ToUpper() + ([string]$accessId).Substring(1)
+
+    return @{
+        id               = $RoleData.groupId
+        uid              = "group|$($RoleData.groupId)|$accessId"
+        name             = $groupName
+        type             = 'Group'
+        status           = $Status
+        source           = 'PIMGroup'
+        resourceName     = $groupName
+        scope            = "Directory ($accessLabel)"
+        startDateTime    = $RoleData.startDateTime
+        endDateTime      = $RoleData.endDateTime
+        memberType       = 'Direct'
+        directoryScopeId = $null
+        principalId      = $RoleData.principalId
+    }
+}
+
+<#
+.SYNOPSIS
+    Build a standardized Azure Resource role hashtable from an Azure Management API response
+.PARAMETER RoleData
+    The raw role object from the Azure Management API response
+.PARAMETER Status
+    'Eligible' or 'Active'
+.PARAMETER SubscriptionName
+    Display name of the Azure subscription
+.PARAMETER SubscriptionScope
+    The /subscriptions/<id> scope string, used to compute relative scope display
+#>
+function New-AzureRoleEntry {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][hashtable]$RoleData,
+        [Parameter(Mandatory)][ValidateSet('Eligible', 'Active')][string]$Status,
+        [Parameter(Mandatory)][string]$SubscriptionName,
+        [Parameter(Mandatory)][string]$SubscriptionScope
+    )
+
+    $roleName = $RoleData.properties.expandedProperties.roleDefinition.displayName ?? 'Azure Role'
+    $scopeDisplay = $SubscriptionName
+    if ($RoleData.properties.scope -ne $SubscriptionScope) {
+        $scopeDisplay = "$SubscriptionName / $($RoleData.properties.scope -replace "^$SubscriptionScope/", '')"
+    }
+    $roleDefId = $RoleData.properties.roleDefinitionId -replace '.*/roleDefinitions/', ''
+
+    return @{
+        id               = $roleDefId
+        uid              = "azure|$roleDefId|$($RoleData.properties.scope)"
+        name             = $roleName
+        type             = 'AzureResource'
+        status           = $Status
+        source           = 'Azure'
+        resourceName     = $SubscriptionName
+        scope            = $scopeDisplay
+        startDateTime    = $RoleData.properties.startDateTime
+        endDateTime      = $RoleData.properties.endDateTime
+        memberType       = if ($Status -eq 'Active') { ($RoleData.properties.assignmentType ?? 'Direct') } else { 'Direct' }
+        directoryScopeId = $RoleData.properties.scope
+        principalId      = $RoleData.properties.principalId
+        roleDefinitionId = $RoleData.properties.roleDefinitionId
+    }
+}
+
+# ────────────────────────────────────────────────────────────────────
+# Role query functions
+# ────────────────────────────────────────────────────────────────────
+
+<#
+.SYNOPSIS
+    Get eligible roles for current user (Entra ID, Groups, and optionally Azure Resources)
+.DESCRIPTION
+    Queries eligible role assignments from up to three sources, resolves display names
+    and scopes, batch-fetches Entra policy requirements, and returns a unified list.
+.PARAMETER UserContext
+    Pode auth context (unused but passed by the route handler)
+.PARAMETER IncludeEntraRoles
+    Include Entra ID directory role eligibilities
+.PARAMETER IncludeGroups
+    Include PIM-enabled group eligibilities
+.PARAMETER IncludeAzureResources
+    Include Azure resource role eligibilities (requires Azure Management token)
 #>
 function Get-PIMEligibleRolesForWeb {
+    [CmdletBinding()]
     param(
         [hashtable]$UserContext,
         [switch]$IncludeEntraRoles,
@@ -215,154 +432,80 @@ function Get-PIMEligibleRolesForWeb {
     )
 
     try {
-        $sessionId = Get-CookieValue -Name 'pim_session'
-        $session = if ($sessionId) { Get-AuthSession -SessionId $sessionId } else { $null }
-        $accessToken = if ($session) { $session.AccessToken } else { $null }
+        $ctx = Get-CurrentSessionContext
+        $accessToken = $ctx.AccessToken
         if (-not $accessToken) {
             return @{ roles = @(); success = $false; error = "No access token"; timestamp = (Get-Date -AsUTC).ToString('o') }
         }
 
         $userId = Get-CurrentUserId -AccessToken $accessToken
         $allRoles = [System.Collections.ArrayList]::new()
-        $auCache = @{}  # Cache AU id -> display name
+        $auCache = @{}
 
-        # Entra ID eligible roles
+        # ── Entra ID eligible roles ──
         if ($IncludeEntraRoles) {
             try {
                 $filter = [System.Web.HttpUtility]::UrlEncode("principalId eq '$userId'")
                 $entraRoles = Invoke-GraphApi -AccessToken $accessToken -Endpoint "/roleManagement/directory/roleEligibilityScheduleInstances?`$filter=$filter&`$expand=roleDefinition"
                 $entraValues = @($entraRoles.value)
-                Write-Host "Entra eligible: found $($entraValues.Count) role(s)"
+                Write-Log -Message "Entra eligible: found $($entraValues.Count) role(s)" -Level 'Debug'
 
-                foreach ($r in $entraValues) {
-                    $roleName = if ($r.roleDefinition) { $r.roleDefinition.displayName } else { "Role $($r.roleDefinitionId)" }
-                    $scope = $r.directoryScopeId ?? '/'
-                    $scopeDisplay = 'Directory'
-                    if ($scope -ne '/' -and $scope -match '/administrativeUnits/(.+)') {
-                        $auId = $Matches[1]
-                        if ($auCache.ContainsKey($auId)) {
-                            $scopeDisplay = $auCache[$auId]
-                        }
-                        else {
-                            try {
-                                $au = Invoke-GraphApi -AccessToken $accessToken -Endpoint "/directory/administrativeUnits/$auId`?`$select=displayName"
-                                $scopeDisplay = "AU: $($au.displayName)"
-                            }
-                            catch {
-                                Write-Host "AU lookup failed for $auId`: $($_.Exception.Message)"
-                                $scopeDisplay = "AU: $auId"
-                            }
-                            $auCache[$auId] = $scopeDisplay
-                        }
-                    }
-
-                    $null = $allRoles.Add(@{
-                        id               = $r.roleDefinitionId
-                        uid              = "$($r.roleDefinitionId)|$scope"
-                        name             = $roleName
-                        type             = 'Entra'
-                        status           = 'Eligible'
-                        source           = 'EntraID'
-                        resourceName     = 'Entra ID Directory'
-                        scope            = $scopeDisplay
-                        startDateTime    = $r.startDateTime
-                        endDateTime      = $r.endDateTime
-                        memberType       = ($r.memberType ?? 'Direct')
-                        directoryScopeId = $scope
-                        principalId      = $r.principalId
-                    })
+                foreach ($roleAssignment in $entraValues) {
+                    $scope = $roleAssignment.directoryScopeId ?? '/'
+                    $scopeDisplay = Resolve-DirectoryScopeDisplay -Scope $scope -AccessToken $accessToken -AuCache $auCache
+                    $null = $allRoles.Add((New-EntraRoleEntry -RoleData $roleAssignment -Status 'Eligible' -ScopeDisplay $scopeDisplay -Scope $scope))
                 }
             }
             catch {
-                Write-Host "Error fetching Entra eligible roles: $($_.Exception.Message)"
+                Write-Log -Message "Error fetching Entra eligible roles: $($_.Exception.Message)" -Level 'Error'
             }
         }
 
-        # PIM-enabled Groups eligible
+        # ── PIM-enabled Groups eligible ──
         if ($IncludeGroups) {
             try {
                 $filter = [System.Web.HttpUtility]::UrlEncode("principalId eq '$userId'")
                 $groupRoles = Invoke-GraphApi -AccessToken $accessToken -Endpoint "/identityGovernance/privilegedAccess/group/eligibilityScheduleInstances?`$filter=$filter&`$expand=group"
                 $groupValues = @($groupRoles.value)
-                Write-Host "Group eligible: found $($groupValues.Count) role(s)"
+                Write-Log -Message "Group eligible: found $($groupValues.Count) role(s)" -Level 'Debug'
 
-                foreach ($r in $groupValues) {
-                    $groupName = $(if ($r.group) { $r.group.displayName } else { "Group $($r.groupId)" })
-                    $accessId = $r.accessId ?? 'member'
-                    $null = $allRoles.Add(@{
-                        id               = $r.groupId
-                        uid              = "group|$($r.groupId)|$accessId"
-                        name             = $groupName
-                        type             = 'Group'
-                        status           = 'Eligible'
-                        source           = 'PIMGroup'
-                        resourceName     = $groupName
-                        scope            = "Directory ($(([string]$accessId).Substring(0,1).ToUpper() + ([string]$accessId).Substring(1)))"
-                        startDateTime    = $r.startDateTime
-                        endDateTime      = $r.endDateTime
-                        memberType       = 'Direct'
-                        directoryScopeId = $null
-                        principalId      = $r.principalId
-                    })
+                foreach ($roleAssignment in $groupValues) {
+                    $null = $allRoles.Add((New-GroupRoleEntry -RoleData $roleAssignment -Status 'Eligible'))
                 }
             }
             catch {
-                Write-Host "Error fetching Group eligible roles: $($_.Exception.Message)"
+                Write-Log -Message "Error fetching Group eligible roles: $($_.Exception.Message)" -Level 'Error'
             }
         }
 
-        # Azure resource eligible roles
+        # ── Azure resource eligible roles ──
         if ($IncludeAzureResources) {
             $azToken = Get-AzureSessionToken
             if ($azToken) {
                 try {
-                    # Get subscriptions
                     $subs = Invoke-AzureApi -AccessToken $azToken -Endpoint '/subscriptions' -ApiVersion '2022-01-01'
                     foreach ($sub in @($subs.value)) {
                         try {
                             $subScope = "/subscriptions/$($sub.subscriptionId)"
                             $eligible = Invoke-AzureApi -AccessToken $azToken -Endpoint "$subScope/providers/Microsoft.Authorization/roleEligibilityScheduleInstances?`$filter=asTarget()" -ApiVersion '2020-10-01'
-                            foreach ($r in @($eligible.value)) {
-                                # Only include roles for the current user
-                                # asTarget() filter already scopes to current user
-                                $roleName = $r.properties.expandedProperties.roleDefinition.displayName ?? 'Azure Role'
-                                $scopeDisplay = $sub.displayName
-                                if ($r.properties.scope -ne $subScope) {
-                                    $scopeDisplay = "$($sub.displayName) / $($r.properties.scope -replace "^$subScope/", '')"
-                                }
-                                $roleDefId = $r.properties.roleDefinitionId -replace '.*/roleDefinitions/', ''
-
-                                $null = $allRoles.Add(@{
-                                    id               = $roleDefId
-                                    uid              = "azure|$roleDefId|$($r.properties.scope)"
-                                    name             = $roleName
-                                    type             = 'AzureResource'
-                                    status           = 'Eligible'
-                                    source           = 'Azure'
-                                    resourceName     = $sub.displayName
-                                    scope            = $scopeDisplay
-                                    startDateTime    = $r.properties.startDateTime
-                                    endDateTime      = $r.properties.endDateTime
-                                    memberType       = 'Direct'
-                                    directoryScopeId = $r.properties.scope
-                                    principalId      = $r.properties.principalId
-                                    roleDefinitionId = $r.properties.roleDefinitionId
-                                })
+                            foreach ($roleAssignment in @($eligible.value)) {
+                                $null = $allRoles.Add((New-AzureRoleEntry -RoleData $roleAssignment -Status 'Eligible' -SubscriptionName $sub.displayName -SubscriptionScope $subScope))
                             }
                         }
                         catch {
-                            Write-Host "Azure eligible roles failed for sub $($sub.displayName): $($_.Exception.Message)"
+                            Write-Log -Message "Azure eligible roles failed for sub $($sub.displayName): $($_.Exception.Message)" -Level 'Error'
                         }
                     }
-                    Write-Host "Azure eligible: found roles across $(@($subs.value).Count) subscription(s)"
+                    Write-Log -Message "Azure eligible: found roles across $(@($subs.value).Count) subscription(s)" -Level 'Debug'
                 }
                 catch {
-                    Write-Host "Error fetching Azure subscriptions: $($_.Exception.Message)"
+                    Write-Log -Message "Error fetching Azure subscriptions: $($_.Exception.Message)" -Level 'Error'
                 }
             }
         }
 
-        # Batch fetch Entra policies — get all assignments in one call, dedupe policy IDs
+        # ── Batch fetch Entra policies ──
+        # Get all policy assignments in one call, deduplicate policy IDs, then fetch each unique policy once
         $policyCache = @{}
         try {
             $entraRoleIds = @($allRoles | Where-Object { $_.type -eq 'Entra' } | ForEach-Object { $_.id } | Select-Object -Unique)
@@ -373,10 +516,10 @@ function Get-PIMEligibleRolesForWeb {
                 # Map roleDefinitionId -> policyId, and collect unique policyIds
                 $roleToPolicyId = @{}
                 $uniquePolicyIds = @{}
-                foreach ($a in @($allAssignments.value)) {
-                    if ($a.roleDefinitionId -and $a.roleDefinitionId -in $entraRoleIds) {
-                        $roleToPolicyId[$a.roleDefinitionId] = $a.policyId
-                        $uniquePolicyIds[$a.policyId] = $true
+                foreach ($assignment in @($allAssignments.value)) {
+                    if ($assignment.roleDefinitionId -and $assignment.roleDefinitionId -in $entraRoleIds) {
+                        $roleToPolicyId[$assignment.roleDefinitionId] = $assignment.policyId
+                        $uniquePolicyIds[$assignment.policyId] = $true
                     }
                 }
 
@@ -387,23 +530,23 @@ function Get-PIMEligibleRolesForWeb {
                         $policy = Invoke-GraphApi -AccessToken $accessToken -Endpoint "/policies/roleManagementPolicies/$polId`?`$expand=rules"
                         $info = @{ maxDurationHours = 8; requiresMfa = $false; requiresJustification = $false; requiresTicket = $false; requiresApproval = $false }
                         foreach ($rule in @($policy.rules)) {
-                            $rt = $rule.'@odata.type'
-                            if ($rt -eq '#microsoft.graph.unifiedRoleManagementPolicyExpirationRule' -and $rule.maximumDuration) {
+                            $ruleType = $rule.'@odata.type'
+                            if ($ruleType -eq '#microsoft.graph.unifiedRoleManagementPolicyExpirationRule' -and $rule.maximumDuration) {
                                 try { $info.maxDurationHours = [int][System.Xml.XmlConvert]::ToTimeSpan($rule.maximumDuration).TotalHours } catch {}
                             }
-                            elseif ($rt -eq '#microsoft.graph.unifiedRoleManagementPolicyEnablementRule' -and $rule.enabledRules) {
+                            elseif ($ruleType -eq '#microsoft.graph.unifiedRoleManagementPolicyEnablementRule' -and $rule.enabledRules) {
                                 $enabled = @($rule.enabledRules)
                                 $info.requiresJustification = 'Justification' -in $enabled
                                 $info.requiresTicket = 'Ticketing' -in $enabled
                                 $info.requiresMfa = 'MultiFactorAuthentication' -in $enabled
                             }
-                            elseif ($rt -eq '#microsoft.graph.unifiedRoleManagementPolicyApprovalRule' -and $rule.setting -and $rule.setting.isApprovalRequired) {
+                            elseif ($ruleType -eq '#microsoft.graph.unifiedRoleManagementPolicyApprovalRule' -and $rule.setting -and $rule.setting.isApprovalRequired) {
                                 $info.requiresApproval = $true
                             }
                         }
                         $policyById[$polId] = $info
                     }
-                    catch { Write-Host "Policy fetch failed for $polId`: $($_.Exception.Message)" }
+                    catch { Write-Log -Message "Policy fetch failed for ${polId}: $($_.Exception.Message)" -Level 'Warning' }
                 }
 
                 # Map policies back to roles
@@ -413,11 +556,11 @@ function Get-PIMEligibleRolesForWeb {
                         $policyCache[$roleId] = $policyById[$polId]
                     }
                 }
-                Write-Host "Policies: $($uniquePolicyIds.Count) unique policies for $($entraRoleIds.Count) Entra roles"
+                Write-Log -Message "Policies: $($uniquePolicyIds.Count) unique policies for $($entraRoleIds.Count) Entra roles" -Level 'Debug'
             }
         }
         catch {
-            Write-Host "Batch policy fetch error: $($_.Exception.Message)"
+            Write-Log -Message "Batch policy fetch error: $($_.Exception.Message)" -Level 'Error'
         }
 
         # Apply policies to roles (defaults for Group/Azure when no policy found)
@@ -435,7 +578,7 @@ function Get-PIMEligibleRolesForWeb {
             }
         }
 
-        Write-Host "Returning $($allRoles.Count) eligible roles"
+        Write-Log -Message "Returning $($allRoles.Count) eligible roles" -Level 'Debug'
         return @{
             roles     = @($allRoles)
             success   = $true
@@ -443,7 +586,7 @@ function Get-PIMEligibleRolesForWeb {
         }
     }
     catch {
-        Write-Host "EligibleRoles ERROR: $($_.Exception.Message)"
+        Write-Log -Message "EligibleRoles ERROR: $($_.Exception.Message)" -Level 'Error'
         return @{
             roles     = @()
             success   = $false
@@ -455,9 +598,18 @@ function Get-PIMEligibleRolesForWeb {
 
 <#
 .SYNOPSIS
-    Get active roles for current user (Entra ID + Groups)
+    Get active roles for current user (Entra ID, Groups, and optionally Azure Resources)
+.PARAMETER UserContext
+    Pode auth context (unused but passed by the route handler)
+.PARAMETER IncludeEntraRoles
+    Include Entra ID directory role assignments
+.PARAMETER IncludeGroups
+    Include PIM-enabled group assignments
+.PARAMETER IncludeAzureResources
+    Include Azure resource role assignments (requires Azure Management token)
 #>
 function Get-PIMActiveRolesForWeb {
+    [CmdletBinding()]
     param(
         [hashtable]$UserContext,
         [switch]$IncludeEntraRoles,
@@ -466,9 +618,8 @@ function Get-PIMActiveRolesForWeb {
     )
 
     try {
-        $sessionId = Get-CookieValue -Name 'pim_session'
-        $session = if ($sessionId) { Get-AuthSession -SessionId $sessionId } else { $null }
-        $accessToken = if ($session) { $session.AccessToken } else { $null }
+        $ctx = Get-CurrentSessionContext
+        $accessToken = $ctx.AccessToken
         if (-not $accessToken) {
             return @{ roles = @(); success = $false; error = 'No access token'; timestamp = (Get-Date -AsUTC).ToString('o') }
         }
@@ -477,91 +628,41 @@ function Get-PIMActiveRolesForWeb {
         $allRoles = [System.Collections.ArrayList]::new()
         $auCache = @{}
 
-        # Entra ID active roles
+        # ── Entra ID active roles ──
         if ($IncludeEntraRoles) {
             try {
                 $filter = [System.Web.HttpUtility]::UrlEncode("principalId eq '$userId'")
                 $entraRoles = Invoke-GraphApi -AccessToken $accessToken -Endpoint "/roleManagement/directory/roleAssignmentScheduleInstances?`$filter=$filter&`$expand=roleDefinition"
 
-                foreach ($r in @($entraRoles.value)) {
-                    $roleDefId = $r.roleDefinitionId
-                    if (-not $roleDefId) { continue }
-                    $roleName = if ($r.roleDefinition) { $r.roleDefinition.displayName } else { "Role $roleDefId" }
+                foreach ($roleAssignment in @($entraRoles.value)) {
+                    if (-not $roleAssignment.roleDefinitionId) { continue }
 
-                    $scope = $r.directoryScopeId ?? '/'
-                    $scopeDisplay = 'Directory'
-                    if ($scope -ne '/' -and $scope -match '/administrativeUnits/(.+)') {
-                        $auId = $Matches[1]
-                        if ($auCache.ContainsKey($auId)) {
-                            $scopeDisplay = $auCache[$auId]
-                        }
-                        else {
-                            try {
-                                $au = Invoke-GraphApi -AccessToken $accessToken -Endpoint "/directory/administrativeUnits/$auId`?`$select=displayName"
-                                $scopeDisplay = "AU: $($au.displayName)"
-                            }
-                            catch {
-                                Write-Host "AU lookup failed for $auId`: $($_.Exception.Message)"
-                                $scopeDisplay = "AU: $auId"
-                            }
-                            $auCache[$auId] = $scopeDisplay
-                        }
-                    }
-
-                    $null = $allRoles.Add(@{
-                        id               = $r.roleDefinitionId
-                        uid              = "$($r.roleDefinitionId)|$scope"
-                        name             = $roleName
-                        type             = 'Entra'
-                        status           = 'Active'
-                        source           = 'EntraID'
-                        resourceName     = 'Entra ID Directory'
-                        scope            = $scopeDisplay
-                        startDateTime    = $r.startDateTime
-                        endDateTime      = $r.endDateTime
-                        memberType       = ($r.memberType ?? 'Direct')
-                        directoryScopeId = $scope
-                        principalId      = $r.principalId
-                    })
+                    $scope = $roleAssignment.directoryScopeId ?? '/'
+                    $scopeDisplay = Resolve-DirectoryScopeDisplay -Scope $scope -AccessToken $accessToken -AuCache $auCache
+                    $null = $allRoles.Add((New-EntraRoleEntry -RoleData $roleAssignment -Status 'Active' -ScopeDisplay $scopeDisplay -Scope $scope))
                 }
             }
             catch {
-                Write-Host "Error fetching Entra active roles: $($_.Exception.Message)"
+                Write-Log -Message "Error fetching Entra active roles: $($_.Exception.Message)" -Level 'Error'
             }
         }
 
-        # PIM-enabled Groups active
+        # ── PIM-enabled Groups active ──
         if ($IncludeGroups) {
             try {
                 $filter = [System.Web.HttpUtility]::UrlEncode("principalId eq '$userId'")
                 $groupRoles = Invoke-GraphApi -AccessToken $accessToken -Endpoint "/identityGovernance/privilegedAccess/group/assignmentScheduleInstances?`$filter=$filter&`$expand=group"
 
-                foreach ($r in @($groupRoles.value)) {
-                    $groupName = $(if ($r.group) { $r.group.displayName } else { "Group $($r.groupId)" })
-                    $accessId = $r.accessId ?? 'member'
-                    $null = $allRoles.Add(@{
-                        id               = $r.groupId
-                        uid              = "group|$($r.groupId)|$accessId"
-                        name             = $groupName
-                        type             = 'Group'
-                        status           = 'Active'
-                        source           = 'PIMGroup'
-                        resourceName     = $groupName
-                        scope            = "Directory ($(([string]$accessId).Substring(0,1).ToUpper() + ([string]$accessId).Substring(1)))"
-                        startDateTime    = $r.startDateTime
-                        endDateTime      = $r.endDateTime
-                        memberType       = 'Direct'
-                        directoryScopeId = $null
-                        principalId      = $r.principalId
-                    })
+                foreach ($roleAssignment in @($groupRoles.value)) {
+                    $null = $allRoles.Add((New-GroupRoleEntry -RoleData $roleAssignment -Status 'Active'))
                 }
             }
             catch {
-                Write-Host "Error fetching Group active roles: $($_.Exception.Message)"
+                Write-Log -Message "Error fetching Group active roles: $($_.Exception.Message)" -Level 'Error'
             }
         }
 
-        # Azure resource active roles
+        # ── Azure resource active roles ──
         if ($IncludeAzureResources) {
             $azToken = Get-AzureSessionToken
             if ($azToken) {
@@ -571,40 +672,18 @@ function Get-PIMActiveRolesForWeb {
                         try {
                             $subScope = "/subscriptions/$($sub.subscriptionId)"
                             $active = Invoke-AzureApi -AccessToken $azToken -Endpoint "$subScope/providers/Microsoft.Authorization/roleAssignmentScheduleInstances?`$filter=asTarget()" -ApiVersion '2020-10-01'
-                            Write-Host "Azure active for $($sub.displayName): $(@($active.value).Count) role(s)"
-                            foreach ($r in @($active.value)) {
-                                $roleName = $r.properties.expandedProperties.roleDefinition.displayName ?? 'Azure Role'
-                                $scopeDisplay = $sub.displayName
-                                if ($r.properties.scope -ne $subScope) {
-                                    $scopeDisplay = "$($sub.displayName) / $($r.properties.scope -replace "^$subScope/", '')"
-                                }
-                                $roleDefId = $r.properties.roleDefinitionId -replace '.*/roleDefinitions/', ''
-
-                                $null = $allRoles.Add(@{
-                                    id               = $roleDefId
-                                    uid              = "azure|$roleDefId|$($r.properties.scope)"
-                                    name             = $roleName
-                                    type             = 'AzureResource'
-                                    status           = 'Active'
-                                    source           = 'Azure'
-                                    resourceName     = $sub.displayName
-                                    scope            = $scopeDisplay
-                                    startDateTime    = $r.properties.startDateTime
-                                    endDateTime      = $r.properties.endDateTime
-                                    memberType       = ($r.properties.assignmentType ?? 'Direct')
-                                    directoryScopeId = $r.properties.scope
-                                    principalId      = $r.properties.principalId
-                                    roleDefinitionId = $r.properties.roleDefinitionId
-                                })
+                            Write-Log -Message "Azure active for $($sub.displayName): $(@($active.value).Count) role(s)" -Level 'Debug'
+                            foreach ($roleAssignment in @($active.value)) {
+                                $null = $allRoles.Add((New-AzureRoleEntry -RoleData $roleAssignment -Status 'Active' -SubscriptionName $sub.displayName -SubscriptionScope $subScope))
                             }
                         }
                         catch {
-                            Write-Host "Azure active roles failed for sub $($sub.displayName): $($_.Exception.Message)"
+                            Write-Log -Message "Azure active roles failed for sub $($sub.displayName): $($_.Exception.Message)" -Level 'Error'
                         }
                     }
                 }
                 catch {
-                    Write-Host "Error fetching Azure active subscriptions: $($_.Exception.Message)"
+                    Write-Log -Message "Error fetching Azure active subscriptions: $($_.Exception.Message)" -Level 'Error'
                 }
             }
         }
@@ -625,16 +704,44 @@ function Get-PIMActiveRolesForWeb {
     }
 }
 
+# ────────────────────────────────────────────────────────────────────
+# Role activation / deactivation
+# ────────────────────────────────────────────────────────────────────
+
 <#
 .SYNOPSIS
     Activate a PIM role
+.DESCRIPTION
+    Sends a selfActivate request for Entra, Group, or Azure Resource roles.
+    Duration is converted to ISO 8601 format (PT{n}H or PT{n}M) as required
+    by both the Graph API and Azure Management API.
+.PARAMETER RoleId
+    The role definition ID (GUID) to activate
+.PARAMETER UserContext
+    Pode auth context (unused but passed by the route handler)
+.PARAMETER RoleType
+    'User' for Entra directory roles, 'Group' for PIM groups, 'AzureResource' for Azure
+.PARAMETER DirectoryScopeId
+    Scope of the role assignment (e.g., '/' for directory, or an Azure resource scope)
+.PARAMETER Justification
+    Reason for the activation (required by some policies)
+.PARAMETER TicketNumber
+    Optional change ticket reference
+.PARAMETER Duration
+    How long the role should remain active
 #>
 function Invoke-PIMRoleActivationForWeb {
+    [CmdletBinding()]
     param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
         [string]$RoleId,
+
         [hashtable]$UserContext,
+
         [ValidateSet('User', 'Group', 'AzureResource')]
         [string]$RoleType = 'User',
+
         [string]$DirectoryScopeId = '/',
         [string]$Justification = $null,
         [string]$TicketNumber = $null,
@@ -642,16 +749,15 @@ function Invoke-PIMRoleActivationForWeb {
     )
 
     try {
-        $sid = Get-CookieValue -Name 'pim_session'
-        $sess = if ($sid) { Get-AuthSession -SessionId $sid } else { $null }
-        $accessToken = if ($sess) { $sess.AccessToken } else { $null }
+        $ctx = Get-CurrentSessionContext
+        $accessToken = $ctx.AccessToken
         if (-not $accessToken) {
             return @{ roleId = $RoleId; status = 'failed'; success = $false; error = 'No access token' }
         }
 
         $userId = Get-CurrentUserId -AccessToken $accessToken
 
-        # Convert duration to ISO 8601 format
+        # Convert duration to ISO 8601 format: PT{hours}H for >= 1 hour, PT{minutes}M otherwise
         $isoDuration = "PT$([int]$Duration.TotalHours)H"
         if ($Duration.TotalHours -lt 1) {
             $isoDuration = "PT$([int]$Duration.TotalMinutes)M"
@@ -690,7 +796,7 @@ function Invoke-PIMRoleActivationForWeb {
                 $endpoint = '/identityGovernance/privilegedAccess/group/assignmentScheduleRequests'
             }
             'AzureResource' {
-                # Azure uses a different API entirely
+                # Azure uses the Management API instead of Graph
                 $azToken = Get-AzureSessionToken
                 if (-not $azToken) {
                     return @{ roleId = $RoleId; status = 'failed'; success = $false; error = 'No Azure access token' }
@@ -765,20 +871,33 @@ function Invoke-PIMRoleActivationForWeb {
 <#
 .SYNOPSIS
     Deactivate a PIM role
+.PARAMETER RoleId
+    The role definition ID (GUID) to deactivate
+.PARAMETER UserContext
+    Pode auth context (unused but passed by the route handler)
+.PARAMETER RoleType
+    'User' for Entra directory roles, 'Group' for PIM groups, 'AzureResource' for Azure
+.PARAMETER DirectoryScopeId
+    Scope of the role assignment
 #>
 function Invoke-PIMRoleDeactivationForWeb {
+    [CmdletBinding()]
     param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
         [string]$RoleId,
+
         [hashtable]$UserContext,
+
         [ValidateSet('User', 'Group', 'AzureResource')]
         [string]$RoleType = 'User',
+
         [string]$DirectoryScopeId = '/'
     )
 
     try {
-        $sid = Get-CookieValue -Name 'pim_session'
-        $sess = if ($sid) { Get-AuthSession -SessionId $sid } else { $null }
-        $accessToken = if ($sess) { $sess.AccessToken } else { $null }
+        $ctx = Get-CurrentSessionContext
+        $accessToken = $ctx.AccessToken
         if (-not $accessToken) {
             return @{ roleId = $RoleId; status = 'failed'; success = $false; error = 'No access token' }
         }
@@ -856,20 +975,30 @@ function Invoke-PIMRoleDeactivationForWeb {
 
 <#
 .SYNOPSIS
-    Get policy requirements for a role
+    Get policy requirements for a role (max duration, MFA, justification, ticket, approval)
+.PARAMETER RoleId
+    The role definition ID (GUID)
+.PARAMETER AccessToken
+    Optional bearer token. If not provided, retrieved from the current session.
+.PARAMETER RoleType
+    'Entra' or 'Group'. Azure resource policies are not fetched here.
 #>
 function Get-PIMRolePolicyForWeb {
+    [CmdletBinding()]
     param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
         [string]$RoleId,
+
         [string]$AccessToken = $null,
+
         [string]$RoleType = 'Entra'
     )
 
     try {
         if (-not $AccessToken) {
-            $sid = Get-CookieValue -Name 'pim_session'
-            $sess = if ($sid) { Get-AuthSession -SessionId $sid } else { $null }
-            $AccessToken = if ($sess) { $sess.AccessToken } else { $null }
+            $ctx = Get-CurrentSessionContext
+            $AccessToken = $ctx.AccessToken
         }
         if (-not $AccessToken) {
             return @{ roleId = $RoleId; success = $false; error = 'No access token' }
@@ -935,7 +1064,7 @@ function Get-PIMRolePolicyForWeb {
                 }
             }
             catch {
-                Write-Host "Entra policy lookup failed for $RoleId`: $($_.Exception.Message)"
+                Write-Log -Message "Entra policy lookup failed for ${RoleId}: $($_.Exception.Message)" -Level 'Warning'
             }
         }
         elseif ($RoleType -eq 'Group') {
@@ -952,7 +1081,7 @@ function Get-PIMRolePolicyForWeb {
                 }
             }
             catch {
-                Write-Host "Group policy lookup failed for $RoleId`: $($_.Exception.Message)"
+                Write-Log -Message "Group policy lookup failed for ${RoleId}: $($_.Exception.Message)" -Level 'Warning'
             }
         }
 

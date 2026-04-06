@@ -13,6 +13,7 @@
     Initialize logging configuration (call inside Start-PodeServer block)
 #>
 function Initialize-Logger {
+    [CmdletBinding()]
     param(
         [ValidateSet('Verbose', 'Debug', 'Information', 'Warning', 'Error')]
         [string]$Level = 'Information',
@@ -45,6 +46,7 @@ function Initialize-Logger {
     Write a log entry
 #>
 function Write-Log {
+    [CmdletBinding()]
     param(
         [string]$Message,
 
