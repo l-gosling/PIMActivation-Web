@@ -87,7 +87,7 @@ function Get-OAuthConfig {
         RedirectUri   = $redirectUri
         AuthorizeUrl  = "https://login.microsoftonline.com/$tenantId/oauth2/v2.0/authorize"
         TokenUrl      = "https://login.microsoftonline.com/$tenantId/oauth2/v2.0/token"
-        Scopes        = 'openid profile email User.Read RoleManagement.ReadWrite.Directory PrivilegedAccess.ReadWrite.AzureADGroup Policy.Read.All AdministrativeUnit.Read.All'
+        Scopes        = 'openid profile email offline_access User.Read RoleManagement.ReadWrite.Directory PrivilegedAccess.ReadWrite.AzureADGroup Policy.Read.All AdministrativeUnit.Read.All'
     }
 }
 
@@ -192,16 +192,46 @@ function Invoke-AuthCallback {
         $payloadJson = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($payloadBase64))
         $claims = $payloadJson | ConvertFrom-Json
 
+        # Exchange refresh token for Azure Management token
+        $azureToken = $null
+        $refreshToken = $tokenResponse.refresh_token
+        Write-Host "Refresh token present: $($null -ne $refreshToken), length: $(if ($refreshToken) { $refreshToken.Length } else { 0 })"
+        if ($refreshToken) {
+            try {
+                $azCurlArgs = @(
+                    '-s', '-4', '-X', 'POST', $oauth.TokenUrl,
+                    '-d', "client_id=$($oauth.ClientId)",
+                    '-d', "client_secret=$([System.Web.HttpUtility]::UrlEncode($oauth.ClientSecret))",
+                    '-d', "refresh_token=$([System.Web.HttpUtility]::UrlEncode($refreshToken))",
+                    '-d', 'grant_type=refresh_token',
+                    '-d', "scope=$([System.Web.HttpUtility]::UrlEncode('https://management.azure.com/.default'))"
+                )
+                $azTokenJson = & curl @azCurlArgs 2>&1
+                $azTokenResponse = $azTokenJson | ConvertFrom-Json
+                if (-not $azTokenResponse.error) {
+                    $azureToken = $azTokenResponse.access_token
+                    Write-Host "Azure Management token acquired"
+                }
+                else {
+                    Write-Host "Azure token failed (non-fatal): $($azTokenResponse.error_description ?? $azTokenResponse.error)"
+                }
+            }
+            catch {
+                Write-Host "Azure token exchange failed (non-fatal): $($_.Exception.Message)"
+            }
+        }
+
         # Create session with cryptographic ID
         $sessionId = New-SecureToken
         Set-AuthSession -SessionId $sessionId -Data @{
-            UserId       = $claims.oid ?? $claims.sub
-            Email        = $claims.preferred_username ?? $claims.email ?? $claims.upn
-            Name         = $claims.name ?? $claims.preferred_username ?? $claims.upn
-            AccessToken  = $tokenResponse.access_token
-            RefreshToken = $tokenResponse.refresh_token
-            ExpiresAt    = (Get-Date).AddSeconds([int]($tokenResponse.expires_in ?? 3600))
-            CreatedAt    = Get-Date
+            UserId            = $claims.oid ?? $claims.sub
+            Email             = $claims.preferred_username ?? $claims.email ?? $claims.upn
+            Name              = $claims.name ?? $claims.preferred_username ?? $claims.upn
+            AccessToken       = $tokenResponse.access_token
+            AzureAccessToken  = $azureToken
+            RefreshToken      = $tokenResponse.refresh_token
+            ExpiresAt         = (Get-Date).AddSeconds([int]($tokenResponse.expires_in ?? 3600))
+            CreatedAt         = Get-Date
         }
 
         Write-Host "Session created for: $($claims.name)"

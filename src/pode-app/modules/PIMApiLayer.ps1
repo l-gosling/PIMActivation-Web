@@ -9,6 +9,69 @@
 #>
 
 function Get-GraphBaseUrl { return 'https://graph.microsoft.com/v1.0' }
+function Get-AzureBaseUrl { return 'https://management.azure.com' }
+
+<#
+.SYNOPSIS
+    Make an Azure Management REST API request
+#>
+function Invoke-AzureApi {
+    param(
+        [string]$AccessToken,
+        [string]$Method = 'GET',
+        [string]$Endpoint,
+        [string]$Body = $null,
+        [string]$ApiVersion = '2020-10-01'
+    )
+
+    $separator = if ($Endpoint -match '\?') { '&' } else { '?' }
+    $url = "$(Get-AzureBaseUrl)$Endpoint${separator}api-version=$ApiVersion"
+    $curlArgs = @(
+        '-s', '-4',
+        '-X', $Method,
+        '-H', "Authorization: Bearer $AccessToken",
+        '-H', 'Content-Type: application/json'
+    )
+
+    if ($Body) {
+        $bodyFile = "/tmp/az_body_$([guid]::NewGuid().ToString('N').Substring(0,8)).json"
+        $Body | Set-Content -Path $bodyFile -Encoding UTF8 -NoNewline
+        $curlArgs += @('-d', "@$bodyFile")
+    }
+
+    try {
+        $curlArgs += $url
+        $rawOutput = & /usr/bin/curl @curlArgs 2>&1
+        $responseText = if ($null -eq $rawOutput) { '' } elseif ($rawOutput -is [array]) { $rawOutput -join "`n" } else { "$rawOutput" }
+        $responseText = $responseText.Trim()
+    }
+    finally {
+        if ($bodyFile -and (Test-Path $bodyFile)) { Remove-Item $bodyFile -Force -ErrorAction SilentlyContinue }
+    }
+
+    if (-not $responseText -or $responseText.Length -eq 0) {
+        throw "Empty response from Azure API: $Method $Endpoint"
+    }
+
+    $result = $responseText | ConvertFrom-Json -AsHashtable
+
+    if ($result.ContainsKey('error') -and $result.error) {
+        throw "Azure API error: $($result.error.message) ($($result.error.code))"
+    }
+
+    return $result
+}
+
+<#
+.SYNOPSIS
+    Get Azure session token from the current request
+#>
+function Get-AzureSessionToken {
+    $sessionId = Get-CookieValue -Name 'pim_session'
+    $session = if ($sessionId) { Get-AuthSession -SessionId $sessionId } else { $null }
+    if ($session) { return $session.AzureAccessToken }
+    return $null
+}
 
 <#
 .SYNOPSIS
@@ -179,6 +242,57 @@ function Get-PIMEligibleRolesForWeb {
             }
         }
 
+        # Azure resource eligible roles
+        if ($IncludeAzureResources) {
+            $azToken = Get-AzureSessionToken
+            if ($azToken) {
+                try {
+                    # Get subscriptions
+                    $subs = Invoke-AzureApi -AccessToken $azToken -Endpoint '/subscriptions' -ApiVersion '2022-01-01'
+                    foreach ($sub in @($subs.value)) {
+                        try {
+                            $subScope = "/subscriptions/$($sub.subscriptionId)"
+                            $eligible = Invoke-AzureApi -AccessToken $azToken -Endpoint "$subScope/providers/Microsoft.Authorization/roleEligibilityScheduleInstances" -ApiVersion '2020-10-01'
+                            foreach ($r in @($eligible.value)) {
+                                # Only include roles for the current user
+                                if ($r.properties.principalId -ne $userId) { continue }
+                                $roleName = $r.properties.expandedProperties.roleDefinition.displayName ?? 'Azure Role'
+                                $scopeDisplay = $sub.displayName
+                                if ($r.properties.scope -ne $subScope) {
+                                    $scopeDisplay = "$($sub.displayName) / $($r.properties.scope -replace "^$subScope/", '')"
+                                }
+                                $roleDefId = $r.properties.roleDefinitionId -replace '.*/roleDefinitions/', ''
+
+                                $null = $allRoles.Add(@{
+                                    id               = $roleDefId
+                                    uid              = "azure|$roleDefId|$($r.properties.scope)"
+                                    name             = $roleName
+                                    type             = 'AzureResource'
+                                    status           = 'Eligible'
+                                    source           = 'Azure'
+                                    resourceName     = $sub.displayName
+                                    scope            = $scopeDisplay
+                                    startDateTime    = $r.properties.startDateTime
+                                    endDateTime      = $r.properties.endDateTime
+                                    memberType       = 'Direct'
+                                    directoryScopeId = $r.properties.scope
+                                    principalId      = $r.properties.principalId
+                                    roleDefinitionId = $r.properties.roleDefinitionId
+                                })
+                            }
+                        }
+                        catch {
+                            Write-Host "Azure eligible roles failed for sub $($sub.displayName): $($_.Exception.Message)"
+                        }
+                    }
+                    Write-Host "Azure eligible: found roles across $(@($subs.value).Count) subscription(s)"
+                }
+                catch {
+                    Write-Host "Error fetching Azure subscriptions: $($_.Exception.Message)"
+                }
+            }
+        }
+
         # Batch fetch all Entra policies in one call, then match to roles
         Write-Host "Fetching policies for $($allRoles.Count) eligible roles"
         $policyCache = @{}
@@ -268,7 +382,8 @@ function Get-PIMActiveRolesForWeb {
     param(
         [hashtable]$UserContext,
         [switch]$IncludeEntraRoles,
-        [switch]$IncludeGroups
+        [switch]$IncludeGroups,
+        [switch]$IncludeAzureResources
     )
 
     try {
@@ -378,6 +493,54 @@ function Get-PIMActiveRolesForWeb {
             }
         }
 
+        # Azure resource active roles
+        if ($IncludeAzureResources) {
+            $azToken = Get-AzureSessionToken
+            if ($azToken) {
+                try {
+                    $subs = Invoke-AzureApi -AccessToken $azToken -Endpoint '/subscriptions' -ApiVersion '2022-01-01'
+                    foreach ($sub in @($subs.value)) {
+                        try {
+                            $subScope = "/subscriptions/$($sub.subscriptionId)"
+                            $active = Invoke-AzureApi -AccessToken $azToken -Endpoint "$subScope/providers/Microsoft.Authorization/roleAssignmentScheduleInstances" -ApiVersion '2020-10-01'
+                            foreach ($r in @($active.value)) {
+                                if ($r.properties.principalId -ne $userId) { continue }
+                                $roleName = $r.properties.expandedProperties.roleDefinition.displayName ?? 'Azure Role'
+                                $scopeDisplay = $sub.displayName
+                                if ($r.properties.scope -ne $subScope) {
+                                    $scopeDisplay = "$($sub.displayName) / $($r.properties.scope -replace "^$subScope/", '')"
+                                }
+                                $roleDefId = $r.properties.roleDefinitionId -replace '.*/roleDefinitions/', ''
+
+                                $null = $allRoles.Add(@{
+                                    id               = $roleDefId
+                                    uid              = "azure|$roleDefId|$($r.properties.scope)"
+                                    name             = $roleName
+                                    type             = 'AzureResource'
+                                    status           = 'Active'
+                                    source           = 'Azure'
+                                    resourceName     = $sub.displayName
+                                    scope            = $scopeDisplay
+                                    startDateTime    = $r.properties.startDateTime
+                                    endDateTime      = $r.properties.endDateTime
+                                    memberType       = ($r.properties.assignmentType ?? 'Direct')
+                                    directoryScopeId = $r.properties.scope
+                                    principalId      = $r.properties.principalId
+                                    roleDefinitionId = $r.properties.roleDefinitionId
+                                })
+                            }
+                        }
+                        catch {
+                            Write-Host "Azure active roles failed for sub $($sub.displayName): $($_.Exception.Message)"
+                        }
+                    }
+                }
+                catch {
+                    Write-Host "Error fetching Azure active subscriptions: $($_.Exception.Message)"
+                }
+            }
+        }
+
         return @{
             roles     = @($allRoles)
             success   = $true
@@ -458,6 +621,40 @@ function Invoke-PIMRoleActivationForWeb {
                 $body.accessId = 'member'
                 $endpoint = '/identityGovernance/privilegedAccess/group/assignmentScheduleRequests'
             }
+            'AzureResource' {
+                # Azure uses a different API entirely
+                $azToken = Get-AzureSessionToken
+                if (-not $azToken) {
+                    return @{ roleId = $RoleId; status = 'failed'; success = $false; error = 'No Azure access token' }
+                }
+                $reqName = [guid]::NewGuid().ToString()
+                $azBody = @{
+                    properties = @{
+                        principalId      = $userId
+                        roleDefinitionId = $DirectoryScopeId + "/providers/Microsoft.Authorization/roleDefinitions/$RoleId"
+                        requestType      = 'SelfActivate'
+                        justification    = ($Justification ?? 'Activated via PIM Web')
+                        scheduleInfo     = @{
+                            startDateTime = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'")
+                            expiration    = @{
+                                type     = 'AfterDuration'
+                                duration = $isoDuration
+                            }
+                        }
+                    }
+                }
+                if ($TicketNumber) {
+                    $azBody.properties.ticketInfo = @{ ticketNumber = $TicketNumber; ticketSystem = 'General' }
+                }
+                $azBodyJson = $azBody | ConvertTo-Json -Depth 5 -Compress
+                $response = Invoke-AzureApi -AccessToken $azToken -Method 'PUT' -Endpoint "$DirectoryScopeId/providers/Microsoft.Authorization/roleAssignmentScheduleRequests/$reqName" -Body $azBodyJson
+                return @{
+                    roleId = $RoleId; status = 'activated'; success = $true
+                    activatedAt = (Get-Date -AsUTC).ToString('o')
+                    expiresAt = (Get-Date -AsUTC).Add($Duration).ToString('o')
+                    timestamp = (Get-Date -AsUTC).ToString('o')
+                }
+            }
             default {
                 return @{ roleId = $RoleId; status = 'failed'; success = $false; error = "Unsupported role type: $RoleType" }
             }
@@ -527,6 +724,29 @@ function Invoke-PIMRoleDeactivationForWeb {
                 $body.groupId  = $RoleId
                 $body.accessId = 'member'
                 $endpoint = '/identityGovernance/privilegedAccess/group/assignmentScheduleRequests'
+            }
+            'AzureResource' {
+                $azToken = Get-AzureSessionToken
+                if (-not $azToken) {
+                    return @{ roleId = $RoleId; status = 'failed'; success = $false; error = 'No Azure access token' }
+                }
+                $reqName = [guid]::NewGuid().ToString()
+                $fullRoleDefId = $DirectoryScopeId + "/providers/Microsoft.Authorization/roleDefinitions/$RoleId"
+                $azBody = @{
+                    properties = @{
+                        principalId      = $userId
+                        roleDefinitionId = $fullRoleDefId
+                        requestType      = 'SelfDeactivate'
+                        justification    = 'Deactivated via PIM Web'
+                    }
+                }
+                $azBodyJson = $azBody | ConvertTo-Json -Depth 5 -Compress
+                $response = Invoke-AzureApi -AccessToken $azToken -Method 'PUT' -Endpoint "$DirectoryScopeId/providers/Microsoft.Authorization/roleAssignmentScheduleRequests/$reqName" -Body $azBodyJson
+                return @{
+                    roleId = $RoleId; status = 'deactivated'; success = $true
+                    deactivatedAt = (Get-Date -AsUTC).ToString('o')
+                    timestamp = (Get-Date -AsUTC).ToString('o')
+                }
             }
             default {
                 return @{ roleId = $RoleId; status = 'failed'; success = $false; error = "Unsupported role type: $RoleType" }

@@ -26,6 +26,9 @@ class RoleManager {
 
     sortRoles(roles) {
         return roles.sort((a, b) => {
+            const typeA = (a.type || '').toLowerCase();
+            const typeB = (b.type || '').toLowerCase();
+            if (typeA !== typeB) return typeA.localeCompare(typeB);
             const nameA = (a.name || '').toLowerCase();
             const nameB = (b.name || '').toLowerCase();
             if (nameA !== nameB) return nameA.localeCompare(nameB);

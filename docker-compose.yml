@@ -15,6 +15,9 @@ services:
       - PODE_MODE=${PODE_MODE:-production}
       - LOG_LEVEL=${LOG_LEVEL:-Information}
       - SESSION_TIMEOUT=${SESSION_TIMEOUT:-3600}
+      - INCLUDE_ENTRA_ROLES=${INCLUDE_ENTRA_ROLES:-true}
+      - INCLUDE_GROUPS=${INCLUDE_GROUPS:-true}
+      - INCLUDE_AZURE_RESOURCES=${INCLUDE_AZURE_RESOURCES:-false}
     volumes:
       - ./config:/etc/pim-config:ro
       - pim-data:/var/pim-data

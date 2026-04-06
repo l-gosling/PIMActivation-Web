@@ -160,7 +160,7 @@ class ActivationManager {
 
             for (const role of roles) {
                 try {
-                    const roleType = role.type === 'Group' ? 'Group' : 'User';
+                    const roleType = role.type === 'Group' ? 'Group' : role.type === 'AzureResource' ? 'AzureResource' : 'User';
                     const result = await window.apiClient.activateRole(role.id, roleType, {
                         directoryScopeId: role.directoryScopeId || '/',
                         durationMinutes,
@@ -203,11 +203,33 @@ class ActivationManager {
         this.onSuccess = null;
     }
 
-    showPreferencesDialog() {
+    async showPreferencesDialog() {
         const modal = document.getElementById('preferences-modal');
         if (modal) {
             const themeSelect = document.getElementById('theme-select');
             if (themeSelect) themeSelect.value = localStorage.getItem('pim-theme') || 'auto';
+
+            // Show Azure option only if enabled in server config
+            const azureOption = document.getElementById('azure-roles-option');
+            const azureCheckbox = document.getElementById('azure-roles-checkbox');
+            if (azureOption && azureCheckbox) {
+                try {
+                    const config = await window.apiClient.getFeatureConfig();
+                    if (config.success && config.features?.includeAzureResources) {
+                        azureOption.classList.remove('hidden');
+                        // Load current user preference
+                        const prefs = await window.apiClient.getUserPreferences();
+                        if (prefs.success) {
+                            azureCheckbox.checked = prefs.preferences?.showAzureRoles !== false;
+                        }
+                    } else {
+                        azureOption.classList.add('hidden');
+                    }
+                } catch (e) {
+                    azureOption.classList.add('hidden');
+                }
+            }
+
             modal.classList.remove('hidden');
             document.body.style.overflow = 'hidden';
         }
@@ -228,10 +250,21 @@ class ActivationManager {
                 autoRefresh: document.getElementById('autorefresh-checkbox')?.checked || false
             };
 
+            // Include Azure preference only if the option is visible
+            const azureOption = document.getElementById('azure-roles-option');
+            if (azureOption && !azureOption.classList.contains('hidden')) {
+                preferences.showAzureRoles = document.getElementById('azure-roles-checkbox')?.checked ?? true;
+            }
+
             await window.apiClient.updateUserPreferences(preferences);
             showToast('Preferences saved successfully', 'success');
             this.closePreferencesDialog();
             applyThemePreference(preferences.theme);
+
+            // Reload roles if Azure setting changed
+            if ('showAzureRoles' in preferences) {
+                await window.roleManager.loadRoles();
+            }
         } catch (error) {
             showToast(`Error saving preferences: ${error.message}`, 'error');
         }

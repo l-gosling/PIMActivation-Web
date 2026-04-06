@@ -89,6 +89,7 @@ function Get-DefaultPreferences {
         rememberAccount  = $true
         autoRefresh      = $false
         refreshInterval  = 300
+        showAzureRoles   = $true
     }
 }
 
@@ -101,6 +102,7 @@ function Get-AllowedPreferences {
         rememberAccount  = 'bool'
         autoRefresh      = 'bool'
         refreshInterval  = 'int'
+        showAzureRoles   = 'bool'
     }
 }
 

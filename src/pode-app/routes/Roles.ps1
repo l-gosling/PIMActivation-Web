@@ -20,7 +20,25 @@ function Invoke-GetEligibleRoles {
     try {
         $config = Get-AllConfig
 
-        $result = Get-PIMEligibleRolesForWeb -UserContext $WebEvent.Auth -IncludeEntraRoles:$config.IncludeEntraRoles -IncludeGroups:$config.IncludeGroups
+        # Azure roles: only if enabled in env AND user hasn't disabled in preferences
+        $showAzure = $config.IncludeAzureResources
+        Write-Host "Azure config: IncludeAzureResources=$showAzure"
+        if ($showAzure) {
+            $sessionId = Get-CookieValue -Name 'pim_session'
+            $session = if ($sessionId) { Get-AuthSession -SessionId $sessionId } else { $null }
+            if ($session) {
+                $prefs = Read-UserPreferences -UserId $session.UserId
+                $hasKey = $prefs.ContainsKey('showAzureRoles')
+                $val = if ($hasKey) { $prefs.showAzureRoles } else { 'N/A' }
+                Write-Host "Azure prefs: hasKey=$hasKey val=$val"
+                if ($hasKey -and -not $prefs.showAzureRoles) {
+                    $showAzure = $false
+                }
+            }
+        }
+        Write-Host "Azure final: showAzure=$showAzure"
+
+        $result = Get-PIMEligibleRolesForWeb -UserContext $WebEvent.Auth -IncludeEntraRoles:$config.IncludeEntraRoles -IncludeGroups:$config.IncludeGroups -IncludeAzureResources:$showAzure
 
         Write-PodeJsonResponse -Value $result -StatusCode 200
     }
@@ -45,7 +63,19 @@ function Invoke-GetActiveRoles {
     try {
         $config = Get-AllConfig
 
-        $result = Get-PIMActiveRolesForWeb -UserContext $WebEvent.Auth -IncludeEntraRoles:$config.IncludeEntraRoles -IncludeGroups:$config.IncludeGroups
+        $showAzure = $config.IncludeAzureResources
+        if ($showAzure) {
+            $sessionId = Get-CookieValue -Name 'pim_session'
+            $session = if ($sessionId) { Get-AuthSession -SessionId $sessionId } else { $null }
+            if ($session) {
+                $prefs = Read-UserPreferences -UserId $session.UserId
+                if ($prefs.ContainsKey('showAzureRoles') -and -not $prefs.showAzureRoles) {
+                    $showAzure = $false
+                }
+            }
+        }
+
+        $result = Get-PIMActiveRolesForWeb -UserContext $WebEvent.Auth -IncludeEntraRoles:$config.IncludeEntraRoles -IncludeGroups:$config.IncludeGroups -IncludeAzureResources:$showAzure
 
         Write-PodeJsonResponse -Value $result -StatusCode 200
     }

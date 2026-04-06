@@ -513,6 +513,7 @@ body {
 
 .type-badge.entra { background: #0078D4; color: white; }
 .type-badge.group { background: #107C10; color: white; }
+.type-badge.azureresource { background: #003067; color: white; }
 
 .flag-required { color: #107C10; font-weight: 600; }
 .flag-yes { color: #107C10; font-weight: 600; }
