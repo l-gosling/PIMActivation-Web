@@ -3,14 +3,12 @@
 > **:construction: This project is under active construction — features may be incomplete, broken, or change without notice. :construction:**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-![Docker](https://img.shields.io/badge/Docker-Container-blue?style=flat-square)
+[![Docker Hub](https://img.shields.io/docker/pulls/lgosling/pim-activation?style=flat-square&label=Docker%20Hub)](https://hub.docker.com/r/lgosling/pim-activation)
 ![PowerShell 7+](https://img.shields.io/badge/PowerShell-7%2B-blue?style=flat-square)
 ![Pode](https://img.shields.io/badge/Pode-2.12-purple?style=flat-square)
 ![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20Docker-lightgrey?style=flat-square)
 
 A web-based Privileged Identity Management (PIM) tool for Microsoft Entra ID, PIM-enabled groups, and Azure Resources. Built with Pode (PowerShell HTTP server) running in Docker, with Entra ID OAuth 2.0 authentication.
-
-> Inspired by [Noble-Effeciency13/PIMActivation](https://github.com/Noble-Effeciency13/PIMActivation) — thanks for the original idea! This project is a complete architectural rewrite (Pode web server, Docker, web UI).
 
 ## Key Features
 
@@ -31,33 +29,30 @@ A web-based Privileged Identity Management (PIM) tool for Microsoft Entra ID, PI
 
 ## Quick Start
 
-### 1. Clone the Repository
+> **Important:** Use a fully qualified domain name (FQDN) like `pim.example.com` instead of `localhost` for production deployments. Entra ID OAuth redirect URIs and cookies work most reliably with a proper FQDN. The examples below use `pim.example.com` as a placeholder — replace it with your actual hostname.
+
+### 1. Pull the Image
 
 ```bash
-git clone https://github.com/l-gosling/PIMActivation-Web.git
-cd PIMActivation-Web
+docker pull lgosling/pim-activation
 ```
 
 ### 2. Configure Environment
 
-```bash
-cp .env.example .env
-```
-
-Edit `.env` with your Entra ID app registration details:
+Create a `.env` file with your Entra ID app registration details:
 
 ```env
 ENTRA_TENANT_ID=your-tenant-id.onmicrosoft.com
 ENTRA_CLIENT_ID=your-app-client-id
 ENTRA_CLIENT_SECRET=your-app-client-secret
-ENTRA_REDIRECT_URI=https://localhost/api/auth/callback
+ENTRA_REDIRECT_URI=https://pim.example.com/api/auth/callback
 ```
 
 ### 3. Set Up HTTPS Certificate
 
 ```bash
 mkdir -p certs
-openssl req -x509 -newkey rsa:4096 -keyout certs/key.pem -out certs/cert.pem -days 365 -nodes -subj "/CN=localhost"
+openssl req -x509 -newkey rsa:4096 -keyout certs/key.pem -out certs/cert.pem -days 365 -nodes -subj "/CN=pim.example.com"
 ```
 
 See [CERTIFICATES.md](CERTIFICATES.md) for production certificate options (Let's Encrypt, enterprise CA, PFX).
@@ -65,12 +60,26 @@ See [CERTIFICATES.md](CERTIFICATES.md) for production certificate options (Let's
 ### 4. Start the Container
 
 ```bash
-docker compose up -d --build
+docker compose up -d
+```
+
+Or run directly with `docker run`:
+
+```bash
+docker run -d \
+  --name pim-activation \
+  --env-file .env \
+  -v ./certs:/etc/pim-certs:ro \
+  -v ./config:/etc/pim-config:ro \
+  -v pim-data:/var/pim-data \
+  -v ./logs:/var/log/pim:rw \
+  -p 443:8080 \
+  lgosling/pim-activation
 ```
 
 ### 5. Access the UI
 
-Open **https://localhost** in your browser. You will be automatically redirected to Entra ID for authentication.
+Open **https://pim.example.com** in your browser. You will be automatically redirected to Entra ID for authentication.
 
 ## Entra ID App Registration
 
@@ -79,12 +88,12 @@ Open **https://localhost** in your browser. You will be automatically redirected
 1. Go to **Azure Portal** > **App registrations** > **New registration**
 2. Name: `PIM Activation Web` (or your choice)
 3. Supported account types: **Single tenant**
-4. Redirect URI: **Web** > `https://localhost/api/auth/callback`
+4. Redirect URI: **Web** > `https://pim.example.com/api/auth/callback`
 
 ### Configure Authentication
 
 1. Go to **Authentication**
-2. Add redirect URI: `https://localhost/api/auth/callback`
+2. Add redirect URI: `https://pim.example.com/api/auth/callback`
 3. Enable **ID tokens** under Implicit grant
 
 ### Add Client Secret
@@ -152,7 +161,7 @@ All configuration is done via the `.env` file. The container reads these at star
 | `ENTRA_TENANT_ID` | *required* | Your Entra ID tenant ID |
 | `ENTRA_CLIENT_ID` | *required* | App registration client ID |
 | `ENTRA_CLIENT_SECRET` | *required* | App registration client secret |
-| `ENTRA_REDIRECT_URI` | `https://localhost/api/auth/callback` | OAuth redirect URI |
+| `ENTRA_REDIRECT_URI` | `https://pim.example.com/api/auth/callback` | OAuth redirect URI |
 
 ### Server
 
@@ -282,6 +291,10 @@ Both MD5 values must match. See [CERTIFICATES.md](CERTIFICATES.md) for more.
 - [HTTPS Certificates](CERTIFICATES.md) — TLS setup guide
 - [Pode Framework](https://badgerati.github.io/Pode/) — official Pode documentation
 - [Microsoft Graph PIM API](https://learn.microsoft.com/en-us/graph/api/resources/privilegedidentitymanagementv3-overview)
+
+## Acknowledgements
+
+> Inspired by [Noble-Effeciency13/PIMActivation](https://github.com/Noble-Effeciency13/PIMActivation) — thanks for the original idea! This project is a complete architectural rewrite (Pode web server, Docker, web UI).
 
 ## License
 
