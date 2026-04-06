@@ -224,27 +224,55 @@ class RoleManager {
         try {
             showLoading(true);
             const uids = Array.from(this.selectedActive);
-            const results = await Promise.allSettled(
-                uids.map(uid => {
-                    const role = this.activeRoles.find(r => (r.uid || r.id) === uid);
-                    return window.apiClient.deactivateRole(role?.id || uid, role?.type || 'User', {
+            let succeeded = [];
+            let failed = [];
+
+            for (const uid of uids) {
+                const role = this.activeRoles.find(r => (r.uid || r.id) === uid);
+                const roleLabel = role
+                    ? `[${role.type}] ${role.name}${role.scope && role.scope !== 'Directory' ? ' (' + role.scope + ')' : ''}`
+                    : uid;
+                try {
+                    const result = await window.apiClient.deactivateRole(role?.id || uid, role?.type || 'User', {
                         directoryScopeId: role?.directoryScopeId || '/'
                     });
-                })
-            );
+                    if (result.success) {
+                        succeeded.push(roleLabel);
+                    } else {
+                        failed.push({ role: roleLabel, error: result.error || 'Unknown error' });
+                    }
+                } catch (error) {
+                    failed.push({ role: roleLabel, error: error.message });
+                }
+            }
 
-            const ok = results.filter(r => r.status === 'fulfilled').length;
-            const fail = results.filter(r => r.status === 'rejected').length;
-            if (ok > 0) {
-                showToast(`${ok} role(s) deactivated`, 'success');
+            if (succeeded.length > 0 && failed.length === 0) {
+                const roleList = succeeded.join('\n');
+                showToast(`Deactivated ${succeeded.length} role(s):\n${roleList}`, 'success', 10000);
+                await new Promise(resolve => setTimeout(resolve, 3000));
                 await this.loadRoles();
             }
-            if (fail > 0) showToast(`Failed to deactivate ${fail} role(s)`, 'error');
+            else if (failed.length > 0) {
+                let details = '';
+                if (succeeded.length > 0) {
+                    details += `Deactivated:\n${succeeded.join('\n')}\n\n`;
+                }
+                details += `Failed (${failed.length}):\n${failed.map(f => `${f.role}\n  Error: ${f.error}`).join('\n\n')}`;
+                showErrorToast(
+                    `${succeeded.length} deactivated, ${failed.length} failed`,
+                    details
+                );
+                if (succeeded.length > 0) {
+                    await new Promise(resolve => setTimeout(resolve, 3000));
+                    await this.loadRoles();
+                }
+            }
         } catch (error) {
-            showToast(`Error: ${error.message}`, 'error');
+            showErrorToast('Deactivation error', error.message);
         } finally {
             showLoading(false);
             this.selectedActive.clear();
+            document.querySelectorAll('.active-check').forEach(cb => cb.checked = false);
             this.updateButtons();
         }
     }

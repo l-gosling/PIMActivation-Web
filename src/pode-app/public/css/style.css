@@ -990,6 +990,47 @@ body.dark-theme .section-title-bar {
     border-left-color: var(--warning-color);
 }
 
+.toast-error-detail {
+    max-width: 500px;
+    padding: var(--spacing-md) !important;
+}
+
+.toast-error-title {
+    font-weight: 700;
+    margin-bottom: var(--spacing-sm);
+}
+
+.toast-error-details {
+    font-size: 11px;
+    font-family: monospace;
+    background: rgba(0,0,0,0.05);
+    padding: var(--spacing-sm);
+    border-radius: var(--border-radius);
+    max-height: 120px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin-bottom: var(--spacing-sm);
+}
+
+.toast-error-actions {
+    display: flex;
+    gap: var(--spacing-sm);
+}
+
+.toast-copy-btn, .toast-close-btn {
+    padding: 3px 10px;
+    border: 1px solid var(--neutral-tertiary-alt);
+    border-radius: var(--border-radius);
+    background: var(--neutral-white);
+    cursor: pointer;
+    font-size: 11px;
+}
+
+.toast-copy-btn:hover, .toast-close-btn:hover {
+    background: var(--neutral-light);
+}
+
 @keyframes slideIn {
     from {
         transform: translateX(400px);

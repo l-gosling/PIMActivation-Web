@@ -354,6 +354,17 @@ function Get-PIMEligibleRolesForWeb {
                 $role.requiresApproval = $p.requiresApproval
                 $role.maxDurationHours = $p.maxDurationHours
             }
+            else {
+                # Default policies when lookup fails or not available
+                switch ($role.type) {
+                    'Group' {
+                        $role.requiresJustification = $true
+                    }
+                    'AzureResource' {
+                        $role.requiresJustification = $true
+                    }
+                }
+            }
         }
 
         Write-Host "Returning $($allRoles.Count) eligible roles"

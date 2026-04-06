@@ -28,21 +28,77 @@ function showLoading(visible) {
 /**
  * Show toast notification
  */
-function showToast(message, type = 'info') {
+function showToast(message, type = 'info', duration = 5000) {
     const container = document.getElementById('toast-container');
     if (!container) return;
 
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
+    toast.style.whiteSpace = 'pre-line';
     toast.textContent = message;
 
     container.appendChild(toast);
 
-    // Auto-remove after 5 seconds
     setTimeout(() => {
         toast.style.animation = 'fadeOut 0.3s ease-in-out';
         setTimeout(() => toast.remove(), 300);
-    }, 5000);
+    }, duration);
+}
+
+/**
+ * Show error toast with details and copy button, stays longer
+ */
+function showErrorToast(title, details) {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+
+    const toast = document.createElement('div');
+    toast.className = 'toast error toast-error-detail';
+
+    const titleEl = document.createElement('div');
+    titleEl.className = 'toast-error-title';
+    titleEl.textContent = title;
+    toast.appendChild(titleEl);
+
+    const detailsEl = document.createElement('pre');
+    detailsEl.className = 'toast-error-details';
+    detailsEl.textContent = details;
+    toast.appendChild(detailsEl);
+
+    const actions = document.createElement('div');
+    actions.className = 'toast-error-actions';
+
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'toast-copy-btn';
+    copyBtn.textContent = 'Copy';
+    copyBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        navigator.clipboard.writeText(`${title}\n${details}`).then(() => {
+            copyBtn.textContent = 'Copied!';
+            setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1500);
+        });
+    });
+    actions.appendChild(copyBtn);
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'toast-close-btn';
+    closeBtn.textContent = 'Dismiss';
+    closeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toast.remove();
+    });
+    actions.appendChild(closeBtn);
+
+    toast.appendChild(actions);
+    container.appendChild(toast);
+
+    // Auto-remove after 30 seconds
+    setTimeout(() => {
+        if (toast.parentNode) {
+            toast.style.animation = 'fadeOut 0.3s ease-in-out';
+            setTimeout(() => toast.remove(), 300);
+        }
+    }, 30000);
 }
 
 /**

@@ -155,10 +155,11 @@ class ActivationManager {
             const roles = [...this.rolesToActivate];
             this.closeDialog();
 
-            let successCount = 0;
-            let errors = [];
+            let succeeded = [];
+            let failed = [];
 
             for (const role of roles) {
+                const roleLabel = `[${role.type}] ${role.name}${role.scope && role.scope !== 'Directory' ? ' (' + role.scope + ')' : ''}`;
                 try {
                     const roleType = role.type === 'Group' ? 'Group' : role.type === 'AzureResource' ? 'AzureResource' : 'User';
                     const result = await window.apiClient.activateRole(role.id, roleType, {
@@ -169,25 +170,46 @@ class ActivationManager {
                     });
 
                     if (result.success) {
-                        successCount++;
+                        succeeded.push(roleLabel);
                     } else {
-                        errors.push(`${role.name}: ${result.error}`);
+                        failed.push({ role: roleLabel, error: result.error || 'Unknown error' });
                     }
                 } catch (error) {
-                    errors.push(`${role.name}: ${error.message}`);
+                    failed.push({ role: roleLabel, error: error.message });
                 }
             }
 
-            if (successCount > 0) {
-                showToast(`${successCount} role(s) activated for ${this.getSelectedDurationText()}`, 'success');
+            // Clear selections regardless of outcome
+            window.roleManager.selectedEligible.clear();
+            window.roleManager.updateButtons();
+
+            if (succeeded.length > 0 && failed.length === 0) {
+                // All succeeded
+                const roleList = succeeded.join('\n');
+                showToast(`Activated ${succeeded.length} role(s) for ${this.getSelectedDurationText()}:\n${roleList}`, 'success', 10000);
+                await new Promise(resolve => setTimeout(resolve, 3000));
                 await window.roleManager.loadRoles();
                 if (this.onSuccess) this.onSuccess();
             }
-            if (errors.length > 0) {
-                showToast(`Failed: ${errors.join('; ')}`, 'error');
+            else if (failed.length > 0) {
+                // Some or all failed — build detailed report
+                let details = '';
+                if (succeeded.length > 0) {
+                    details += `Activated:\n${succeeded.join('\n')}\n\n`;
+                }
+                details += `Failed (${failed.length}):\n${failed.map(f => `${f.role}\n  Error: ${f.error}`).join('\n\n')}`;
+                showErrorToast(
+                    `${succeeded.length} activated, ${failed.length} failed`,
+                    details
+                );
+                if (succeeded.length > 0) {
+                    await new Promise(resolve => setTimeout(resolve, 3000));
+                    await window.roleManager.loadRoles();
+                    if (this.onSuccess) this.onSuccess();
+                }
             }
         } catch (error) {
-            showToast(`Error: ${error.message}`, 'error');
+            showErrorToast('Activation error', error.message);
         } finally {
             showLoading(false);
         }
