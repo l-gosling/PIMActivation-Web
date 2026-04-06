@@ -6,3 +6,4 @@ logs/
 Thumbs.db
 
 .claude/
+certs/

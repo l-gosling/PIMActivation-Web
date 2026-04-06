@@ -31,22 +31,24 @@ WORKDIR /app
 # Copy application code
 COPY ./src/pode-app .
 
-# Create data directories
+# Create data and cert directories
 RUN mkdir -p /var/pim-data/preferences \
     /var/pim-data/logs \
-    /etc/pim-config
+    /etc/pim-config \
+    /etc/pim-certs
 
 # Set proper permissions
 RUN chmod -R 755 /app && \
     chmod -R 777 /var/pim-data && \
-    chmod -R 777 /etc/pim-config
+    chmod -R 777 /etc/pim-config && \
+    chmod -R 755 /etc/pim-certs
 
 # Expose port
 EXPOSE 8080
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8080/api/health || exit 1
+    CMD curl -kf https://localhost:8080/api/health 2>/dev/null || curl -f http://localhost:8080/api/health || exit 1
 
 # Use tini to handle signals properly
 ENTRYPOINT ["/sbin/tini", "--"]

@@ -236,7 +236,8 @@ function Invoke-AuthCallback {
 
         Write-Host "Session created for: $($claims.name)"
 
-        Set-PodeCookie -Name 'pim_session' -Value $sessionId -ExpiryDate ([datetime]::UtcNow.AddHours(1)) -HttpOnly
+        $isHttps = (Test-Path ($env:PODE_CERT_PATH ?? '/etc/pim-certs/cert.pem'))
+        Set-PodeCookie -Name 'pim_session' -Value $sessionId -ExpiryDate ([datetime]::UtcNow.AddHours(1)) -HttpOnly -Secure:$isHttps
         Remove-PodeCookie -Name 'oauth_state'
 
         Move-PodeResponseUrl -Url '/'

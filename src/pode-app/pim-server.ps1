@@ -58,9 +58,19 @@ Write-Log -Message "Mode: $Mode, Port: $Port, LogLevel: $LogLevel" -Level 'Infor
 # Start Pode server
 Start-PodeServer -Name 'PIM-Activation' -Threads 5 {
 
-    # Configure endpoint
+    # Configure endpoint (HTTPS if certificate is present, otherwise HTTP)
     $serverPort = [int]($env:PODE_PORT ?? '8080')
-    Add-PodeEndpoint -Address * -Port $serverPort -Protocol Http
+    $certPath = $env:PODE_CERT_PATH ?? '/etc/pim-certs/cert.pem'
+    $keyPath = $env:PODE_CERT_KEY_PATH ?? '/etc/pim-certs/key.pem'
+
+    if ((Test-Path $certPath) -and (Test-Path $keyPath)) {
+        Add-PodeEndpoint -Address * -Port $serverPort -Protocol Https -Certificate $certPath -CertificateKey $keyPath
+        Write-Host "HTTPS endpoint configured on port $serverPort"
+    }
+    else {
+        Add-PodeEndpoint -Address * -Port $serverPort -Protocol Http
+        Write-Host "HTTP endpoint configured on port $serverPort (no certificate found)"
+    }
 
     # Import scripts into Pode route runspaces so handler functions are available
     Use-PodeScript -Path (Join-Path $PSScriptRoot 'modules' 'Logger.ps1')
