@@ -71,6 +71,7 @@ function Invoke-ActivateRole {
         $data = $WebEvent.Data
         $roleId = $data.roleId
         $roleType = $data.roleType ?? 'User'
+        $directoryScopeId = $data.directoryScopeId ?? '/'
         $justification = $data.justification
         $ticketNumber = $data.ticketNumber
         $durationMinutes = $data.durationMinutes ?? 60
@@ -85,7 +86,7 @@ function Invoke-ActivateRole {
 
         $duration = [timespan]::FromMinutes($durationMinutes)
 
-        $result = Invoke-PIMRoleActivationForWeb -RoleId $roleId -UserContext $WebEvent.Auth -RoleType $roleType -Justification $justification -TicketNumber $ticketNumber -Duration $duration
+        $result = Invoke-PIMRoleActivationForWeb -RoleId $roleId -UserContext $WebEvent.Auth -RoleType $roleType -DirectoryScopeId $directoryScopeId -Justification $justification -TicketNumber $ticketNumber -Duration $duration
 
         if ($result.success) {
             Write-PodeJsonResponse -Value $result -StatusCode 200
@@ -116,6 +117,7 @@ function Invoke-DeactivateRole {
         $data = $WebEvent.Data
         $roleId = $data.roleId
         $roleType = $data.roleType ?? 'User'
+        $directoryScopeId = $data.directoryScopeId ?? '/'
 
         if ([string]::IsNullOrWhiteSpace($roleId)) {
             Write-PodeJsonResponse -Value @{
@@ -125,7 +127,7 @@ function Invoke-DeactivateRole {
             return
         }
 
-        $result = Invoke-PIMRoleDeactivationForWeb -RoleId $roleId -UserContext $WebEvent.Auth -RoleType $roleType
+        $result = Invoke-PIMRoleDeactivationForWeb -RoleId $roleId -UserContext $WebEvent.Auth -RoleType $roleType -DirectoryScopeId $directoryScopeId
 
         if ($result.success) {
             Write-PodeJsonResponse -Value $result -StatusCode 200

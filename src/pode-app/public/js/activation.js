@@ -151,15 +151,18 @@ class ActivationManager {
 
         try {
             showLoading(true);
+            // Copy roles before closing dialog (closeDialog clears the array)
+            const roles = [...this.rolesToActivate];
             this.closeDialog();
 
             let successCount = 0;
             let errors = [];
 
-            for (const role of this.rolesToActivate) {
+            for (const role of roles) {
                 try {
                     const roleType = role.type === 'Group' ? 'Group' : 'User';
                     const result = await window.apiClient.activateRole(role.id, roleType, {
+                        directoryScopeId: role.directoryScopeId || '/',
                         durationMinutes,
                         justification: justification || 'Activated via PIM Web',
                         ticketNumber: ticketNumber || null

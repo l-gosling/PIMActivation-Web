@@ -62,14 +62,18 @@ class ApiClient {
     async activateRole(roleId, roleType, options = {}) {
         return this.post('/api/roles/activate', {
             roleId, roleType,
+            directoryScopeId: options.directoryScopeId || '/',
             justification: options.justification,
             ticketNumber: options.ticketNumber,
             durationMinutes: options.durationMinutes || 60
         });
     }
 
-    async deactivateRole(roleId, roleType = 'User') {
-        return this.post('/api/roles/deactivate', { roleId, roleType });
+    async deactivateRole(roleId, roleType = 'User', options = {}) {
+        return this.post('/api/roles/deactivate', {
+            roleId, roleType,
+            directoryScopeId: options.directoryScopeId || '/'
+        });
     }
 
     async getRolePolicies(roleId) { return this.get(`/api/roles/policies/${roleId}`); }

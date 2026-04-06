@@ -93,6 +93,7 @@ function Get-PIMEligibleRolesForWeb {
 
         $userId = Get-CurrentUserId -AccessToken $accessToken
         $allRoles = [System.Collections.ArrayList]::new()
+        $auCache = @{}  # Cache AU id -> display name
 
         # Entra ID eligible roles
         if ($IncludeEntraRoles) {
@@ -107,13 +108,20 @@ function Get-PIMEligibleRolesForWeb {
                     $scope = $r.directoryScopeId ?? '/'
                     $scopeDisplay = 'Directory'
                     if ($scope -ne '/' -and $scope -match '/administrativeUnits/(.+)') {
-                        try {
-                            $au = Invoke-GraphApi -AccessToken $accessToken -Endpoint "/directory/administrativeUnits/$($Matches[1])?`$select=displayName"
-                            $scopeDisplay = "AU: $($au.displayName)"
+                        $auId = $Matches[1]
+                        if ($auCache.ContainsKey($auId)) {
+                            $scopeDisplay = $auCache[$auId]
                         }
-                        catch {
-                            Write-Host "AU lookup failed for $($Matches[1]): $($_.Exception.Message)"
-                            $scopeDisplay = "AU: $($Matches[1])"
+                        else {
+                            try {
+                                $au = Invoke-GraphApi -AccessToken $accessToken -Endpoint "/directory/administrativeUnits/$auId`?`$select=displayName"
+                                $scopeDisplay = "AU: $($au.displayName)"
+                            }
+                            catch {
+                                Write-Host "AU lookup failed for $auId`: $($_.Exception.Message)"
+                                $scopeDisplay = "AU: $auId"
+                            }
+                            $auCache[$auId] = $scopeDisplay
                         }
                     }
 
@@ -171,21 +179,66 @@ function Get-PIMEligibleRolesForWeb {
             }
         }
 
-        # Fetch policies for each eligible role and merge into role data
+        # Batch fetch all Entra policies in one call, then match to roles
         Write-Host "Fetching policies for $($allRoles.Count) eligible roles"
-        foreach ($role in $allRoles) {
-            try {
-                $policy = Get-PIMRolePolicyForWeb -RoleId $role.id -AccessToken $accessToken -RoleType $role.type
-                if ($policy.success) {
-                    $role.requiresMfa = $policy.requiresMfa
-                    $role.requiresJustification = $policy.requiresJustification
-                    $role.requiresTicket = $policy.requiresTicket
-                    $role.requiresApproval = $policy.requiresApproval
-                    $role.maxDurationHours = $policy.maxDurationHours
+        $policyCache = @{}
+        try {
+            # Get all DirectoryRole policy assignments at once
+            $entraRoleIds = @($allRoles | Where-Object { $_.type -eq 'Entra' } | ForEach-Object { $_.id } | Select-Object -Unique)
+            if ($entraRoleIds.Count -gt 0) {
+                $filter = [System.Web.HttpUtility]::UrlEncode("scopeId eq '/' and scopeType eq 'DirectoryRole'")
+                $allAssignments = Invoke-GraphApi -AccessToken $accessToken -Endpoint "/policies/roleManagementPolicyAssignments?`$filter=$filter"
+                foreach ($a in @($allAssignments.value)) {
+                    if ($a.roleDefinitionId -and $a.roleDefinitionId -in $entraRoleIds -and -not $policyCache.ContainsKey($a.roleDefinitionId)) {
+                        try {
+                            $policy = Invoke-GraphApi -AccessToken $accessToken -Endpoint "/policies/roleManagementPolicies/$($a.policyId)?`$expand=rules"
+                            $info = @{ maxDurationHours = 8; requiresMfa = $false; requiresJustification = $false; requiresTicket = $false; requiresApproval = $false }
+                            foreach ($rule in @($policy.rules)) {
+                                $rt = $rule.'@odata.type'
+                                if ($rt -eq '#microsoft.graph.unifiedRoleManagementPolicyExpirationRule' -and $rule.maximumDuration) {
+                                    try { $info.maxDurationHours = [int][System.Xml.XmlConvert]::ToTimeSpan($rule.maximumDuration).TotalHours } catch {}
+                                }
+                                elseif ($rt -eq '#microsoft.graph.unifiedRoleManagementPolicyEnablementRule' -and $rule.enabledRules) {
+                                    $enabled = @($rule.enabledRules)
+                                    $info.requiresJustification = 'Justification' -in $enabled
+                                    $info.requiresTicket = 'Ticketing' -in $enabled
+                                    $info.requiresMfa = 'MultiFactorAuthentication' -in $enabled
+                                }
+                                elseif ($rt -eq '#microsoft.graph.unifiedRoleManagementPolicyApprovalRule' -and $rule.setting -and $rule.setting.isApprovalRequired) {
+                                    $info.requiresApproval = $true
+                                }
+                            }
+                            $policyCache[$a.roleDefinitionId] = $info
+                        }
+                        catch { Write-Host "Policy fetch failed for $($a.roleDefinitionId): $($_.Exception.Message)" }
+                    }
                 }
             }
-            catch {
-                Write-Host "Policy fetch failed for $($role.name): $($_.Exception.Message)"
+
+            # Fetch group policies individually (usually few)
+            $groupRoleIds = @($allRoles | Where-Object { $_.type -eq 'Group' } | ForEach-Object { $_.id } | Select-Object -Unique)
+            foreach ($gid in $groupRoleIds) {
+                try {
+                    $p = Get-PIMRolePolicyForWeb -RoleId $gid -AccessToken $accessToken -RoleType 'Group'
+                    if ($p.success) { $policyCache["group_$gid"] = $p }
+                }
+                catch { }
+            }
+        }
+        catch {
+            Write-Host "Batch policy fetch error: $($_.Exception.Message)"
+        }
+
+        # Apply policies to roles
+        foreach ($role in $allRoles) {
+            $key = if ($role.type -eq 'Group') { "group_$($role.id)" } else { $role.id }
+            if ($policyCache.ContainsKey($key)) {
+                $p = $policyCache[$key]
+                $role.requiresMfa = $p.requiresMfa
+                $role.requiresJustification = $p.requiresJustification
+                $role.requiresTicket = $p.requiresTicket
+                $role.requiresApproval = $p.requiresApproval
+                $role.maxDurationHours = $p.maxDurationHours
             }
         }
 
@@ -228,6 +281,7 @@ function Get-PIMActiveRolesForWeb {
 
         $userId = Get-CurrentUserId -AccessToken $accessToken
         $allRoles = [System.Collections.ArrayList]::new()
+        $auCache = @{}
 
         # Entra ID active roles
         if ($IncludeEntraRoles) {
@@ -252,37 +306,41 @@ function Get-PIMActiveRolesForWeb {
                     }
                     $roleName = $roleDefCache[$roleDefId]
 
-                    # Only include time-bound (activated) assignments, not permanent
-                    if ($r.assignmentType -eq 'Activated') {
-                        $scope = $r.directoryScopeId ?? '/'
-                        $scopeDisplay = 'Directory'
-                        if ($scope -ne '/' -and $scope -match '/administrativeUnits/(.+)') {
+                    $scope = $r.directoryScopeId ?? '/'
+                    $scopeDisplay = 'Directory'
+                    if ($scope -ne '/' -and $scope -match '/administrativeUnits/(.+)') {
+                        $auId = $Matches[1]
+                        if ($auCache.ContainsKey($auId)) {
+                            $scopeDisplay = $auCache[$auId]
+                        }
+                        else {
                             try {
-                                $au = Invoke-GraphApi -AccessToken $accessToken -Endpoint "/directory/administrativeUnits/$($Matches[1])?`$select=displayName"
+                                $au = Invoke-GraphApi -AccessToken $accessToken -Endpoint "/directory/administrativeUnits/$auId`?`$select=displayName"
                                 $scopeDisplay = "AU: $($au.displayName)"
                             }
                             catch {
-                            Write-Host "AU lookup failed for $($Matches[1]): $($_.Exception.Message)"
-                            $scopeDisplay = "AU: $($Matches[1])"
+                                Write-Host "AU lookup failed for $auId`: $($_.Exception.Message)"
+                                $scopeDisplay = "AU: $auId"
+                            }
+                            $auCache[$auId] = $scopeDisplay
                         }
-                        }
-
-                        $null = $allRoles.Add(@{
-                            id               = $r.roleDefinitionId
-                            uid              = "$($r.roleDefinitionId)|$scope"
-                            name             = $roleName
-                            type             = 'Entra'
-                            status           = 'Active'
-                            source           = 'EntraID'
-                            resourceName     = 'Entra ID Directory'
-                            scope            = $scopeDisplay
-                            startDateTime    = $r.startDateTime
-                            endDateTime      = $r.endDateTime
-                            memberType       = ($r.memberType ?? 'Direct')
-                            directoryScopeId = $scope
-                            principalId      = $r.principalId
-                        })
                     }
+
+                    $null = $allRoles.Add(@{
+                        id               = $r.roleDefinitionId
+                        uid              = "$($r.roleDefinitionId)|$scope"
+                        name             = $roleName
+                        type             = 'Entra'
+                        status           = 'Active'
+                        source           = 'EntraID'
+                        resourceName     = 'Entra ID Directory'
+                        scope            = $scopeDisplay
+                        startDateTime    = $r.startDateTime
+                        endDateTime      = $r.endDateTime
+                        memberType       = ($r.memberType ?? 'Direct')
+                        directoryScopeId = $scope
+                        principalId      = $r.principalId
+                    })
                 }
             }
             catch {
@@ -297,25 +355,22 @@ function Get-PIMActiveRolesForWeb {
                 $groupRoles = Invoke-GraphApi -AccessToken $accessToken -Endpoint "/identityGovernance/privilegedAccess/group/assignmentScheduleInstances?`$filter=$filter&`$expand=group"
 
                 foreach ($r in @($groupRoles.value)) {
-                    # Only include activated assignments
-                    if ($r.assignmentType -eq 'Activated') {
-                        $groupName = $(if ($r.group) { $r.group.displayName } else { "Group $($r.groupId)" })
-                        $null = $allRoles.Add(@{
-                            id               = $r.groupId
-                            uid              = "group|$($r.groupId)"
-                            name             = $groupName
-                            type             = 'Group'
-                            status           = 'Active'
-                            source           = 'PIMGroup'
-                            resourceName     = $groupName
-                            scope            = 'Directory'
-                            startDateTime    = $r.startDateTime
-                            endDateTime      = $r.endDateTime
-                            memberType       = ($r.accessId ?? 'member')
-                            directoryScopeId = $null
-                            principalId      = $r.principalId
-                        })
-                    }
+                    $groupName = $(if ($r.group) { $r.group.displayName } else { "Group $($r.groupId)" })
+                    $null = $allRoles.Add(@{
+                        id               = $r.groupId
+                        uid              = "group|$($r.groupId)"
+                        name             = $groupName
+                        type             = 'Group'
+                        status           = 'Active'
+                        source           = 'PIMGroup'
+                        resourceName     = $groupName
+                        scope            = 'Directory'
+                        startDateTime    = $r.startDateTime
+                        endDateTime      = $r.endDateTime
+                        memberType       = ($r.accessId ?? 'member')
+                        directoryScopeId = $null
+                        principalId      = $r.principalId
+                    })
                 }
             }
             catch {
@@ -349,6 +404,7 @@ function Invoke-PIMRoleActivationForWeb {
         [hashtable]$UserContext,
         [ValidateSet('User', 'Group', 'AzureResource')]
         [string]$RoleType = 'User',
+        [string]$DirectoryScopeId = '/',
         [string]$Justification = $null,
         [string]$TicketNumber = $null,
         [timespan]$Duration = [timespan]::FromHours(1)
@@ -394,7 +450,7 @@ function Invoke-PIMRoleActivationForWeb {
         switch ($RoleType) {
             'User' {
                 $body.roleDefinitionId = $RoleId
-                $body.directoryScopeId = '/'
+                $body.directoryScopeId = if ($DirectoryScopeId) { $DirectoryScopeId } else { '/' }
                 $endpoint = '/roleManagement/directory/roleAssignmentScheduleRequests'
             }
             'Group' {
@@ -440,7 +496,8 @@ function Invoke-PIMRoleDeactivationForWeb {
         [string]$RoleId,
         [hashtable]$UserContext,
         [ValidateSet('User', 'Group', 'AzureResource')]
-        [string]$RoleType = 'User'
+        [string]$RoleType = 'User',
+        [string]$DirectoryScopeId = '/'
     )
 
     try {
@@ -463,7 +520,7 @@ function Invoke-PIMRoleDeactivationForWeb {
         switch ($RoleType) {
             'User' {
                 $body.roleDefinitionId = $RoleId
-                $body.directoryScopeId = '/'
+                $body.directoryScopeId = if ($DirectoryScopeId) { $DirectoryScopeId } else { '/' }
                 $endpoint = '/roleManagement/directory/roleAssignmentScheduleRequests'
             }
             'Group' {

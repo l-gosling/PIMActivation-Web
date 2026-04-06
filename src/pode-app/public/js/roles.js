@@ -15,6 +15,24 @@ class RoleManager {
         document.getElementById('activate-button')?.addEventListener('click', () => this.handleActivate());
         document.getElementById('deactivate-button')?.addEventListener('click', () => this.handleDeactivate());
         document.getElementById('refresh-button')?.addEventListener('click', () => this.loadRoles());
+
+        document.getElementById('search-active')?.addEventListener('input', (e) => {
+            this.filterRoles('active', e.target.value);
+        });
+        document.getElementById('search-eligible')?.addEventListener('input', (e) => {
+            this.filterRoles('eligible', e.target.value);
+        });
+    }
+
+    sortRoles(roles) {
+        return roles.sort((a, b) => {
+            const nameA = (a.name || '').toLowerCase();
+            const nameB = (b.name || '').toLowerCase();
+            if (nameA !== nameB) return nameA.localeCompare(nameB);
+            const scopeA = (a.scope || '').toLowerCase();
+            const scopeB = (b.scope || '').toLowerCase();
+            return scopeA.localeCompare(scopeB);
+        });
     }
 
     async loadRoles() {
@@ -27,12 +45,12 @@ class RoleManager {
             ]);
 
             if (activeResponse.success) {
-                this.activeRoles = activeResponse.roles || [];
+                this.activeRoles = this.sortRoles(activeResponse.roles || []);
                 this.renderActiveRoles();
             }
 
             if (eligibleResponse.success) {
-                this.eligibleRoles = eligibleResponse.roles || [];
+                this.eligibleRoles = this.sortRoles(eligibleResponse.roles || []);
                 this.renderEligibleRoles();
             }
 
@@ -80,7 +98,7 @@ class RoleManager {
             }
 
             return `<tr data-uid="${uid}" data-index="${i}">
-                <td class="col-check"><input type="checkbox" class="active-check" data-uid="${uid}"></td>
+                <td class="col-check"><label class="check-area"><input type="checkbox" class="active-check" data-uid="${uid}"></label></td>
                 <td>${typeBadge}</td>
                 <td>${escapeHtml(role.name)}</td>
                 <td class="${resource.includes('via Group') ? 'resource-via-group' : ''}">${escapeHtml(resource)}</td>
@@ -118,16 +136,11 @@ class RoleManager {
 
         tbody.innerHTML = this.eligibleRoles.map((role, i) => {
             const uid = role.uid || role.id;
-            const namePrefix = `[${role.type}] `;
+            const typeBadge = `<span class="type-badge ${(role.type || '').toLowerCase()}">[${role.type}]</span>`;
             const scope = role.scope || 'Directory';
             const memberType = role.memberType || 'Direct';
 
-            // Policy info (fetched separately or inline)
             const maxDur = role.maxDurationHours ? `${role.maxDurationHours}h` : '8h';
-            const mfa = role.requiresMfa;
-            const justification = role.requiresJustification;
-            const ticket = role.requiresTicket;
-            const approval = role.requiresApproval;
 
             const flagHtml = (val) => val
                 ? '<span class="flag-required">Required</span>'
@@ -137,21 +150,22 @@ class RoleManager {
                 : '<span class="flag-no">No</span>';
 
             return `<tr data-uid="${uid}" data-index="${i}">
-                <td class="col-check"><input type="checkbox" class="eligible-check" data-uid="${uid}"></td>
-                <td>${escapeHtml(namePrefix + role.name)}</td>
+                <td class="col-check"><label class="check-area"><input type="checkbox" class="eligible-check" data-uid="${uid}"></label></td>
+                <td>${typeBadge}</td>
+                <td>${escapeHtml(role.name)}</td>
                 <td>${escapeHtml(scope)}</td>
                 <td>${escapeHtml(memberType)}</td>
                 <td>${maxDur}</td>
-                <td>${yesNo(mfa)}</td>
-                <td>${flagHtml(justification)}</td>
-                <td>${flagHtml(ticket)}</td>
-                <td>${flagHtml(approval)}</td>
+                <td>${yesNo(role.requiresMfa)}</td>
+                <td>${flagHtml(role.requiresJustification)}</td>
+                <td>${flagHtml(role.requiresTicket)}</td>
+                <td>${flagHtml(role.requiresApproval)}</td>
             </tr>`;
         }).join('');
 
-        // Checkbox handlers
         tbody.querySelectorAll('.eligible-check').forEach(cb => {
             cb.addEventListener('change', (e) => {
+                e.stopPropagation();
                 const uid = e.target.dataset.uid;
                 if (e.target.checked) this.selectedEligible.add(uid);
                 else this.selectedEligible.delete(uid);
@@ -159,10 +173,10 @@ class RoleManager {
             });
         });
 
-        // Row click to activate
+        // Row click to activate (only if not clicking checkbox area)
         tbody.querySelectorAll('tr').forEach(row => {
             row.addEventListener('click', (e) => {
-                if (e.target.type === 'checkbox') return;
+                if (e.target.closest('.check-area')) return;
                 const uid = row.dataset.uid;
                 const role = this.eligibleRoles.find(r => (r.uid || r.id) === uid);
                 if (role) window.activationManager.showActivationDialog(role);
@@ -178,7 +192,6 @@ class RoleManager {
     }
 
     selectAll() {
-        // Not used in new layout but kept for keyboard shortcut
         document.querySelectorAll('.eligible-check').forEach(cb => {
             cb.checked = true;
             this.selectedEligible.add(cb.dataset.uid);
@@ -211,7 +224,9 @@ class RoleManager {
             const results = await Promise.allSettled(
                 uids.map(uid => {
                     const role = this.activeRoles.find(r => (r.uid || r.id) === uid);
-                    return window.apiClient.deactivateRole(role?.id || uid, role?.type || 'User');
+                    return window.apiClient.deactivateRole(role?.id || uid, role?.type || 'User', {
+                        directoryScopeId: role?.directoryScopeId || '/'
+                    });
                 })
             );
 
@@ -242,5 +257,4 @@ class RoleManager {
     }
 }
 
-// Global role manager instance
 window.roleManager = new RoleManager();
