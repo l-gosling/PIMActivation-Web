@@ -127,10 +127,16 @@ class AuthManager {
                 return true;
             }
         } catch (error) {
-            // Not authenticated — show login
+            // Not authenticated — redirect to Entra ID login
         }
 
-        this.showLoginUI();
+        // Auto-redirect to login unless we just came back with an error
+        const params = new URLSearchParams(window.location.search);
+        if (params.has('error')) {
+            this.showLoginUI();
+        } else {
+            window.location.href = '/api/auth/login';
+        }
         return false;
     }
 }
