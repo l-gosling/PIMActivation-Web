@@ -14,6 +14,8 @@ class ApiClient {
      */
     async fetch(endpoint, options = {}) {
         const url = `${this.baseUrl}${endpoint}`;
+        const silent = options.silent;
+        delete options.silent;
         const headers = {
             'Content-Type': 'application/json',
             ...options.headers
@@ -27,7 +29,9 @@ class ApiClient {
             });
 
             if (response.status === 401) {
-                window.dispatchEvent(new CustomEvent('auth:expired'));
+                if (!silent) {
+                    window.dispatchEvent(new CustomEvent('auth:expired'));
+                }
                 throw new Error('Session expired. Please log in again.');
             }
 
@@ -78,13 +82,22 @@ class ApiClient {
 
     async getRolePolicies(roleId) { return this.get(`/api/roles/policies/${roleId}`); }
 
-    // Config endpoints
-    async getFeatureConfig() { return this.get('/api/config/features'); }
-    async getThemeConfig()   { return this.get('/api/config/theme'); }
+    // Silent fetch (won't trigger logout on 401)
+    silentGet(endpoint) {
+        return this.fetch(endpoint, { method: 'GET', silent: true });
+    }
 
-    // User preferences
-    async getUserPreferences()              { return this.get('/api/user/preferences'); }
-    async updateUserPreferences(preferences) { return this.post('/api/user/preferences', preferences); }
+    silentPost(endpoint, data) {
+        return this.fetch(endpoint, { method: 'POST', body: JSON.stringify(data), silent: true });
+    }
+
+    // Config endpoints
+    async getFeatureConfig() { return this.silentGet('/api/config/features'); }
+    async getThemeConfig()   { return this.silentGet('/api/config/theme'); }
+
+    // User preferences (silent — don't logout on failure)
+    async getUserPreferences()              { return this.silentGet('/api/user/preferences'); }
+    async updateUserPreferences(preferences) { return this.silentPost('/api/user/preferences', preferences); }
 }
 
 // Global API client instance
