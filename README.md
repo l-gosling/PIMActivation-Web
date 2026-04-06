@@ -98,23 +98,23 @@ Add the following **delegated** permissions and grant admin consent:
 
 | Permission | API | Type | Admin Consent | Purpose |
 |-----------|-----|------|---------------|---------|
-| `User.Read` | Microsoft Graph | Delegated | No | Read user profile |
-| `openid` | Microsoft Graph | Delegated | No | OpenID Connect sign-in |
-| `profile` | Microsoft Graph | Delegated | No | User profile claims |
-| `email` | Microsoft Graph | Delegated | No | User email claim |
-| `offline_access` | Microsoft Graph | Delegated | No | Refresh tokens |
-| `RoleManagement.ReadWrite.Directory` | Microsoft Graph | Delegated | Yes | Activate/deactivate Entra roles |
-| `PrivilegedAccess.ReadWrite.AzureADGroup` | Microsoft Graph | Delegated | Yes | Activate/deactivate PIM groups |
-| `Policy.Read.All` | Microsoft Graph | Delegated | Yes | Read role policies (MFA, justification) |
-| `AdministrativeUnit.Read.All` | Microsoft Graph | Delegated | Yes | Resolve AU scope names |
+| `User.Read` | Microsoft Graph | Delegated | No | Read signed-in user's display name, email, and object ID for session and UI display |
+| `openid` | Microsoft Graph | Delegated | No | OpenID Connect sign-in — provides the `id_token` used to identify the user during OAuth callback |
+| `profile` | Microsoft Graph | Delegated | No | Access user profile claims (name, preferred_username) shown in the header and session |
+| `email` | Microsoft Graph | Delegated | No | Access user email address for display and preference storage key |
+| `offline_access` | Microsoft Graph | Delegated | No | Obtain a refresh token to silently renew expired Graph and Azure tokens without re-login |
+| `RoleManagement.ReadWrite.Directory` | Microsoft Graph | Delegated | Yes | List eligible/active Entra ID directory roles, submit selfActivate and selfDeactivate requests, and read role definitions |
+| `PrivilegedAccess.ReadWrite.AzureADGroup` | Microsoft Graph | Delegated | Yes | List eligible/active PIM-enabled group memberships and submit activation/deactivation requests for group member/owner roles |
+| `Policy.Read.All` | Microsoft Graph | Delegated | Yes | Read role management policies to display per-role requirements (max duration, MFA, justification, ticket, approval) in the eligible roles table |
+| `AdministrativeUnit.Read.All` | Microsoft Graph | Delegated | Yes | Resolve Administrative Unit IDs to display names (e.g. show "AU: IT Department" instead of a GUID in the scope column) |
 
 #### Optional (for Azure Resource Roles)
 
 | Permission | API | Type | Admin Consent | Purpose |
 |-----------|-----|------|---------------|---------|
-| `user_impersonation` | Azure Service Management | Delegated | No | Azure PIM role management |
+| `user_impersonation` | Azure Service Management | Delegated | No | List eligible/active Azure PIM roles across subscriptions using `$filter=asTarget()`, submit SelfActivate/SelfDeactivate requests for Azure RBAC roles, and enumerate subscriptions. Only grants access within the user's existing Azure RBAC permissions. |
 
-> **Note:** `user_impersonation` on Azure Service Management is low-risk and does not require admin consent. It only allows the app to act as the user within their existing Azure RBAC permissions.
+> **Note:** `user_impersonation` on Azure Service Management is classified as low-risk and does not require admin consent. It does not grant any elevated access — the app can only perform actions the signed-in user is already authorized for via their Azure RBAC assignments. Enable `INCLUDE_AZURE_RESOURCES=true` in `.env` to use this feature.
 
 ## Docker Architecture
 
