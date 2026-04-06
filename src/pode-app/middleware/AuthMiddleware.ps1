@@ -87,7 +87,7 @@ function Get-OAuthConfig {
         RedirectUri   = $redirectUri
         AuthorizeUrl  = "https://login.microsoftonline.com/$tenantId/oauth2/v2.0/authorize"
         TokenUrl      = "https://login.microsoftonline.com/$tenantId/oauth2/v2.0/token"
-        Scopes        = 'openid profile email User.Read'
+        Scopes        = 'openid profile email User.Read RoleManagement.ReadWrite.Directory PrivilegedAccess.ReadWrite.AzureADGroup Policy.Read.All AdministrativeUnit.Read.All'
     }
 }
 

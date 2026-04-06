@@ -6,62 +6,15 @@ class RoleManager {
     constructor() {
         this.eligibleRoles = [];
         this.activeRoles = [];
-        this.selectedRoles = new Set();
+        this.selectedEligible = new Set();
+        this.selectedActive = new Set();
         this.initEventListeners();
     }
 
     initEventListeners() {
-        // Tab switching
-        document.querySelectorAll('.nav-item').forEach(item => {
-            item.addEventListener('click', (e) => this.switchTab(e.currentTarget));
-        });
-
-        // Search/filter
-        document.getElementById('search-eligible')?.addEventListener('input', (e) => {
-            this.filterRoles('eligible', e.target.value);
-        });
-
-        document.getElementById('search-active')?.addEventListener('input', (e) => {
-            this.filterRoles('active', e.target.value);
-        });
-
-        // Select all button
-        document.getElementById('select-all-button')?.addEventListener('click', () => {
-            this.selectAll();
-        });
-
-        // Activate button
-        document.getElementById('activate-button')?.addEventListener('click', () => {
-            this.handleActivateMultiple();
-        });
-
-        // Deactivate button
-        document.getElementById('deactivate-button')?.addEventListener('click', () => {
-            this.handleDeactivateMultiple();
-        });
-
-        // Refresh button
-        document.getElementById('refresh-button')?.addEventListener('click', () => {
-            this.loadRoles();
-        });
-    }
-
-    switchTab(element) {
-        // Update nav items
-        document.querySelectorAll('.nav-item').forEach(item => {
-            item.classList.remove('active');
-        });
-        element.classList.add('active');
-
-        // Update tab content
-        const tabName = element.dataset.tab;
-        document.querySelectorAll('.tab-content').forEach(tab => {
-            tab.classList.remove('active');
-        });
-        document.getElementById(`${tabName}-tab`)?.classList.add('active');
-
-        this.selectedRoles.clear();
-        this.updateActionButtons();
+        document.getElementById('activate-button')?.addEventListener('click', () => this.handleActivate());
+        document.getElementById('deactivate-button')?.addEventListener('click', () => this.handleDeactivate());
+        document.getElementById('refresh-button')?.addEventListener('click', () => this.loadRoles());
     }
 
     async loadRoles() {
@@ -73,14 +26,14 @@ class RoleManager {
                 window.apiClient.getActiveRoles()
             ]);
 
-            if (eligibleResponse.success) {
-                this.eligibleRoles = eligibleResponse.roles || [];
-                this.renderRoles('eligible');
-            }
-
             if (activeResponse.success) {
                 this.activeRoles = activeResponse.roles || [];
-                this.renderRoles('active');
+                this.renderActiveRoles();
+            }
+
+            if (eligibleResponse.success) {
+                this.eligibleRoles = eligibleResponse.roles || [];
+                this.renderEligibleRoles();
             }
 
             showToast('Roles loaded successfully', 'success');
@@ -92,180 +45,200 @@ class RoleManager {
         }
     }
 
-    renderRoles(type) {
-        const container = document.getElementById(`${type}-roles-list`);
-        if (!container) return;
+    renderActiveRoles() {
+        const tbody = document.getElementById('active-roles-body');
+        const empty = document.getElementById('active-empty');
+        const count = document.getElementById('active-count');
 
-        const roles = type === 'eligible' ? this.eligibleRoles : this.activeRoles;
+        if (!tbody) return;
 
-        if (roles.length === 0) {
-            container.innerHTML = '<p class="empty-state">No roles found</p>';
+        count.textContent = `${this.activeRoles.length} roles active`;
+
+        if (this.activeRoles.length === 0) {
+            tbody.innerHTML = '';
+            empty?.classList.remove('hidden');
             return;
         }
+        empty?.classList.add('hidden');
 
-        container.innerHTML = roles.map((role, index) => this.createRoleElement(role, type, index)).join('');
+        tbody.innerHTML = this.activeRoles.map((role, i) => {
+            const uid = role.uid || role.id;
+            const typeBadge = `<span class="type-badge ${(role.type || '').toLowerCase()}">[${role.type}]</span>`;
+            const resource = role.resourceName || 'Entra ID Directory';
+            const scope = role.scope || 'Directory';
+            const memberType = role.memberType || 'Direct';
 
-        // Add event listeners to checkboxes
-        container.querySelectorAll('.role-checkbox').forEach(checkbox => {
-            checkbox.addEventListener('change', (e) => {
-                const roleId = e.target.dataset.roleId;
-                if (e.target.checked) {
-                    this.selectedRoles.add(roleId);
-                } else {
-                    this.selectedRoles.delete(roleId);
-                }
-                this.updateActionButtons();
-            });
-        });
-
-        // Add click handlers for role activation
-        if (type === 'eligible') {
-            container.querySelectorAll('.role-item').forEach(item => {
-                item.addEventListener('click', (e) => {
-                    if (e.target.type !== 'checkbox') {
-                        const roleId = item.dataset.roleId;
-                        const role = roles.find(r => r.id === roleId);
-                        if (role) {
-                            window.activationManager.showActivationDialog(role);
-                        }
-                    }
-                });
-            });
-        }
-    }
-
-    createRoleElement(role, type, index) {
-        const roleType = role.type || 'User';
-        const typeBadgeClass = roleType.toLowerCase();
-        const expiresAt = role.expiresAt ? new Date(role.expiresAt).toLocaleString() : '';
-
-        let metaHtml = '';
-        if (type === 'active' && expiresAt) {
-            metaHtml = `<div class="role-meta">
-                <div class="role-duration">
-                    ⏱️ Expires: ${expiresAt}
-                </div>
-            </div>`;
-        }
-
-        return `
-            <div class="role-item" data-role-id="${role.id}" data-role-index="${index}">
-                <input 
-                    type="checkbox" 
-                    class="role-checkbox" 
-                    data-role-id="${role.id}"
-                    aria-label="Select ${role.name}"
-                >
-                <div class="role-info-box">
-                    <div class="role-name">${escapeHtml(role.name)}</div>
-                    <div>
-                        <span class="role-type-badge ${typeBadgeClass}">${roleType}</span>
-                        ${role.requiresJustification ? '<span class="role-type-badge">⚠️ Justification Required</span>' : ''}
-                        ${role.requiresMfa ? '<span class="role-type-badge">🔐 MFA Required</span>' : ''}
-                    </div>
-                    <div class="role-scope">${escapeHtml(role.scope || 'N/A')}</div>
-                    ${metaHtml}
-                </div>
-            </div>
-        `;
-    }
-
-    filterRoles(type, query) {
-        const container = document.getElementById(`${type}-roles-list`);
-        if (!container) return;
-
-        const items = container.querySelectorAll('.role-item');
-        const lowerQuery = query.toLowerCase();
-
-        items.forEach(item => {
-            const roleeName = item.querySelector('.role-name').textContent.toLowerCase();
-            const roleScope = item.querySelector('.role-scope').textContent.toLowerCase();
-
-            if (roleeName.includes(lowerQuery) || roleScope.includes(lowerQuery)) {
-                item.style.display = '';
+            let expiresHtml;
+            if (role.endDateTime) {
+                const d = new Date(role.endDateTime);
+                const now = new Date();
+                const hoursLeft = (d - now) / 3600000;
+                const cls = hoursLeft < 1 ? 'expires-soon' : '';
+                expiresHtml = `<span class="${cls}">${d.toLocaleString()}</span>`;
             } else {
-                item.style.display = 'none';
+                expiresHtml = '<span class="expires-permanent">Permanent</span>';
             }
+
+            return `<tr data-uid="${uid}" data-index="${i}">
+                <td class="col-check"><input type="checkbox" class="active-check" data-uid="${uid}"></td>
+                <td>${typeBadge}</td>
+                <td>${escapeHtml(role.name)}</td>
+                <td class="${resource.includes('via Group') ? 'resource-via-group' : ''}">${escapeHtml(resource)}</td>
+                <td>${escapeHtml(scope)}</td>
+                <td>${escapeHtml(memberType)}</td>
+                <td>${expiresHtml}</td>
+            </tr>`;
+        }).join('');
+
+        tbody.querySelectorAll('.active-check').forEach(cb => {
+            cb.addEventListener('change', (e) => {
+                const uid = e.target.dataset.uid;
+                if (e.target.checked) this.selectedActive.add(uid);
+                else this.selectedActive.delete(uid);
+                this.updateButtons();
+            });
         });
+    }
+
+    renderEligibleRoles() {
+        const tbody = document.getElementById('eligible-roles-body');
+        const empty = document.getElementById('eligible-empty');
+        const count = document.getElementById('eligible-count');
+
+        if (!tbody) return;
+
+        count.textContent = `${this.eligibleRoles.length} roles available`;
+
+        if (this.eligibleRoles.length === 0) {
+            tbody.innerHTML = '';
+            empty?.classList.remove('hidden');
+            return;
+        }
+        empty?.classList.add('hidden');
+
+        tbody.innerHTML = this.eligibleRoles.map((role, i) => {
+            const uid = role.uid || role.id;
+            const namePrefix = `[${role.type}] `;
+            const scope = role.scope || 'Directory';
+            const memberType = role.memberType || 'Direct';
+
+            // Policy info (fetched separately or inline)
+            const maxDur = role.maxDurationHours ? `${role.maxDurationHours}h` : '8h';
+            const mfa = role.requiresMfa;
+            const justification = role.requiresJustification;
+            const ticket = role.requiresTicket;
+            const approval = role.requiresApproval;
+
+            const flagHtml = (val) => val
+                ? '<span class="flag-required">Required</span>'
+                : '<span class="flag-no">No</span>';
+            const yesNo = (val) => val
+                ? '<span class="flag-yes">Yes</span>'
+                : '<span class="flag-no">No</span>';
+
+            return `<tr data-uid="${uid}" data-index="${i}">
+                <td class="col-check"><input type="checkbox" class="eligible-check" data-uid="${uid}"></td>
+                <td>${escapeHtml(namePrefix + role.name)}</td>
+                <td>${escapeHtml(scope)}</td>
+                <td>${escapeHtml(memberType)}</td>
+                <td>${maxDur}</td>
+                <td>${yesNo(mfa)}</td>
+                <td>${flagHtml(justification)}</td>
+                <td>${flagHtml(ticket)}</td>
+                <td>${flagHtml(approval)}</td>
+            </tr>`;
+        }).join('');
+
+        // Checkbox handlers
+        tbody.querySelectorAll('.eligible-check').forEach(cb => {
+            cb.addEventListener('change', (e) => {
+                const uid = e.target.dataset.uid;
+                if (e.target.checked) this.selectedEligible.add(uid);
+                else this.selectedEligible.delete(uid);
+                this.updateButtons();
+            });
+        });
+
+        // Row click to activate
+        tbody.querySelectorAll('tr').forEach(row => {
+            row.addEventListener('click', (e) => {
+                if (e.target.type === 'checkbox') return;
+                const uid = row.dataset.uid;
+                const role = this.eligibleRoles.find(r => (r.uid || r.id) === uid);
+                if (role) window.activationManager.showActivationDialog(role);
+            });
+        });
+    }
+
+    updateButtons() {
+        const activateBtn = document.getElementById('activate-button');
+        const deactivateBtn = document.getElementById('deactivate-button');
+        if (activateBtn) activateBtn.disabled = this.selectedEligible.size === 0;
+        if (deactivateBtn) deactivateBtn.disabled = this.selectedActive.size === 0;
     }
 
     selectAll() {
-        const activeTab = document.querySelector('.nav-item.active').dataset.tab;
-        const container = document.getElementById(`${activeTab}-roles-list`);
-        if (!container) return;
-
-        container.querySelectorAll('.role-checkbox:not(:disabled)').forEach(checkbox => {
-            if (checkbox.offsetParent !== null) { // Only visible items
-                checkbox.checked = true;
-                this.selectedRoles.add(checkbox.dataset.roleId);
-            }
+        // Not used in new layout but kept for keyboard shortcut
+        document.querySelectorAll('.eligible-check').forEach(cb => {
+            cb.checked = true;
+            this.selectedEligible.add(cb.dataset.uid);
         });
-
-        this.updateActionButtons();
+        this.updateButtons();
     }
 
-    updateActionButtons() {
-        const activateBtn = document.getElementById('activate-button');
-        const deactivateBtn = document.getElementById('deactivate-button');
+    handleActivate() {
+        if (this.selectedEligible.size === 0) return;
+        const uids = Array.from(this.selectedEligible);
+        const roles = uids
+            .map(uid => this.eligibleRoles.find(r => (r.uid || r.id) === uid))
+            .filter(Boolean);
 
-        if (activateBtn) {
-            activateBtn.disabled = this.selectedRoles.size === 0;
-        }
-
-        if (deactivateBtn) {
-            deactivateBtn.disabled = this.selectedRoles.size === 0;
-        }
-    }
-
-    async handleActivateMultiple() {
-        if (this.selectedRoles.size === 0) return;
-
-        const roleIds = Array.from(this.selectedRoles);
-        const firstRole = this.eligibleRoles.find(r => r.id === roleIds[0]);
-
-        if (firstRole) {
-            window.activationManager.showActivationDialog(firstRole, () => {
-                this.selectedRoles.clear();
-                this.updateActionButtons();
+        if (roles.length > 0) {
+            window.activationManager.showActivationDialog(roles, () => {
+                this.selectedEligible.clear();
+                this.updateButtons();
             });
         }
     }
 
-    async handleDeactivateMultiple() {
-        if (this.selectedRoles.size === 0) return;
-
-        if (!confirm(`Deactivate ${this.selectedRoles.size} role(s)?`)) {
-            return;
-        }
+    async handleDeactivate() {
+        if (this.selectedActive.size === 0) return;
+        if (!confirm(`Deactivate ${this.selectedActive.size} role(s)?`)) return;
 
         try {
             showLoading(true);
-
-            const roleIds = Array.from(this.selectedRoles);
+            const uids = Array.from(this.selectedActive);
             const results = await Promise.allSettled(
-                roleIds.map(roleId =>
-                    window.apiClient.deactivateRole(roleId, 'User')
-                )
+                uids.map(uid => {
+                    const role = this.activeRoles.find(r => (r.uid || r.id) === uid);
+                    return window.apiClient.deactivateRole(role?.id || uid, role?.type || 'User');
+                })
             );
 
-            const successCount = results.filter(r => r.status === 'fulfilled').length;
-            const failureCount = results.filter(r => r.status === 'rejected').length;
-
-            if (successCount > 0) {
-                showToast(`${successCount} role(s) deactivated successfully`, 'success');
+            const ok = results.filter(r => r.status === 'fulfilled').length;
+            const fail = results.filter(r => r.status === 'rejected').length;
+            if (ok > 0) {
+                showToast(`${ok} role(s) deactivated`, 'success');
                 await this.loadRoles();
             }
-
-            if (failureCount > 0) {
-                showToast(`Failed to deactivate ${failureCount} role(s)`, 'error');
-            }
+            if (fail > 0) showToast(`Failed to deactivate ${fail} role(s)`, 'error');
         } catch (error) {
             showToast(`Error: ${error.message}`, 'error');
         } finally {
             showLoading(false);
-            this.selectedRoles.clear();
-            this.updateActionButtons();
+            this.selectedActive.clear();
+            this.updateButtons();
         }
+    }
+
+    filterRoles(type, query) {
+        const tableId = type === 'eligible' ? 'eligible-roles-body' : 'active-roles-body';
+        const tbody = document.getElementById(tableId);
+        if (!tbody) return;
+        const lower = query.toLowerCase();
+        tbody.querySelectorAll('tr').forEach(row => {
+            row.style.display = row.textContent.toLowerCase().includes(lower) ? '' : 'none';
+        });
     }
 }
 

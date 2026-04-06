@@ -40,7 +40,6 @@ $RoutesPath = Join-Path $PSScriptRoot 'routes'
 
 . (Join-Path $ModulePath 'Logger.ps1')
 . (Join-Path $ModulePath 'Configuration.ps1')
-. (Join-Path $ModulePath 'SessionManager.ps1')
 . (Join-Path $ModulePath 'PIMApiLayer.ps1')
 . (Join-Path $MiddlewarePath 'AuthMiddleware.ps1')
 . (Join-Path $MiddlewarePath 'ErrorMiddleware.ps1')
@@ -66,7 +65,6 @@ Start-PodeServer -Name 'PIM-Activation' -Threads 5 {
     # Import scripts into Pode route runspaces so handler functions are available
     Use-PodeScript -Path (Join-Path $PSScriptRoot 'modules' 'Logger.ps1')
     Use-PodeScript -Path (Join-Path $PSScriptRoot 'modules' 'Configuration.ps1')
-    Use-PodeScript -Path (Join-Path $PSScriptRoot 'modules' 'SessionManager.ps1')
     Use-PodeScript -Path (Join-Path $PSScriptRoot 'modules' 'PIMApiLayer.ps1')
     Use-PodeScript -Path (Join-Path $PSScriptRoot 'middleware' 'AuthMiddleware.ps1')
     Use-PodeScript -Path (Join-Path $PSScriptRoot 'middleware' 'ErrorMiddleware.ps1')

@@ -4,34 +4,33 @@
 .SYNOPSIS
     Logging module for PIM Activation Web Service
 .DESCRIPTION
-    Provides structured logging functionality with JSON support
+    Provides structured logging functionality with JSON support.
+    Uses Pode state for config so it works across runspaces.
 #>
-
-# Global logger state
-$script:LogConfig = @{
-    Level         = 'Information'
-    Path          = $null
-    Format        = 'Json'
-    MaxFileSize   = 10MB
-    MaxBackupFiles = 5
-}
 
 <#
 .SYNOPSIS
-    Initialize logging configuration
+    Initialize logging configuration (call inside Start-PodeServer block)
 #>
 function Initialize-Logger {
     param(
         [ValidateSet('Verbose', 'Debug', 'Information', 'Warning', 'Error')]
-        [string]
-        $Level = 'Information',
-
-        [string]
-        $Path = $null
+        [string]$Level = 'Information',
+        [string]$Path = $null
     )
 
-    $script:LogConfig.Level = $Level
-    $script:LogConfig.Path = $Path
+    # Store in Pode state if available, otherwise use env vars as fallback
+    try {
+        Set-PodeState -Name 'LogConfig' -Value @{
+            Level = $Level
+            Path  = $Path
+        } | Out-Null
+    }
+    catch {
+        # Pode not initialized yet (called outside server block) — use env vars
+        $env:PIM_LOG_LEVEL = $Level
+        $env:PIM_LOG_PATH = $Path
+    }
 
     if ($Path) {
         $dir = Split-Path $Path -Parent
@@ -47,18 +46,14 @@ function Initialize-Logger {
 #>
 function Write-Log {
     param(
-        [string]
-        $Message,
+        [string]$Message,
 
         [ValidateSet('Verbose', 'Debug', 'Information', 'Warning', 'Error')]
-        [string]
-        $Level = 'Information',
+        [string]$Level = 'Information',
 
-        [hashtable]
-        $Data = @{}
+        [hashtable]$Data = @{}
     )
 
-    # Convert level string to numeric value for filtering
     $logLevels = @{
         'Verbose'     = 0
         'Debug'       = 1
@@ -67,7 +62,22 @@ function Write-Log {
         'Error'       = 4
     }
 
-    if ($logLevels[$Level] -lt $logLevels[$script:LogConfig.Level]) {
+    # Get config from Pode state or env vars
+    $configLevel = 'Information'
+    $configPath = $null
+    try {
+        $config = Get-PodeState -Name 'LogConfig'
+        if ($config) {
+            $configLevel = $config.Level
+            $configPath = $config.Path
+        }
+    }
+    catch {
+        $configLevel = $env:PIM_LOG_LEVEL ?? 'Information'
+        $configPath = $env:PIM_LOG_PATH
+    }
+
+    if ($logLevels[$Level] -lt $logLevels[$configLevel]) {
         return
     }
 
@@ -80,11 +90,9 @@ function Write-Log {
 
     $jsonLog = $logEntry | ConvertTo-Json -Compress
 
-    # Write to console
     Write-Host $jsonLog
 
-    # Write to file if configured
-    if ($script:LogConfig.Path) {
-        Add-Content -Path $script:LogConfig.Path -Value $jsonLog -ErrorAction SilentlyContinue
+    if ($configPath) {
+        Add-Content -Path $configPath -Value $jsonLog -ErrorAction SilentlyContinue
     }
 }

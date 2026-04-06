@@ -4,8 +4,7 @@
 
 class ActivationManager {
     constructor() {
-        this.currentRole = null;
-        this.rolePolicy = null;
+        this.rolesToActivate = [];
         this.onSuccess = null;
         this.initEventListeners();
     }
@@ -20,11 +19,8 @@ class ActivationManager {
         cancelBtn?.addEventListener('click', () => this.closeDialog());
         activateBtn?.addEventListener('click', () => this.handleActivate());
 
-        // Close on overlay click
         modal?.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                this.closeDialog();
-            }
+            if (e.target === modal) this.closeDialog();
         });
 
         // Preferences modal
@@ -41,79 +37,104 @@ class ActivationManager {
         });
     }
 
-    async showActivationDialog(role, onSuccess = null) {
-        this.currentRole = role;
+    /**
+     * Get the duration in minutes from the main page duration selectors
+     */
+    getSelectedDurationMinutes() {
+        const hours = parseInt(document.getElementById('duration-hours')?.value || '8');
+        const minutes = parseInt(document.getElementById('duration-minutes')?.value || '0');
+        return (hours * 60) + minutes;
+    }
+
+    getSelectedDurationText() {
+        const hours = parseInt(document.getElementById('duration-hours')?.value || '8');
+        const minutes = parseInt(document.getElementById('duration-minutes')?.value || '0');
+        const parts = [];
+        if (hours > 0) parts.push(`${hours}h`);
+        if (minutes > 0) parts.push(`${minutes}m`);
+        return parts.join(' ') || '0m';
+    }
+
+    /**
+     * Show activation dialog for one or multiple roles
+     * @param {Object|Object[]} roles - single role or array of roles
+     * @param {Function} onSuccess - callback after successful activation
+     */
+    showActivationDialog(roles, onSuccess = null) {
+        this.rolesToActivate = Array.isArray(roles) ? roles : [roles];
         this.onSuccess = onSuccess;
 
-        // Update modal with role info
-        const roleInfo = document.getElementById('modal-role-info');
-        if (roleInfo) {
-            roleInfo.innerHTML = `
-                <div class="role-name">${escapeHtml(role.name)}</div>
-                <div class="role-scope">${escapeHtml(role.scope || 'N/A')}</div>
+        // Build role list table
+        const roleList = document.getElementById('modal-role-list');
+        if (roleList) {
+            roleList.innerHTML = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Type</th>
+                            <th>Role Name</th>
+                            <th>Scope</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${this.rolesToActivate.map(r => `
+                            <tr>
+                                <td><span class="type-badge ${(r.type || '').toLowerCase()}">${r.type || 'Entra'}</span></td>
+                                <td>${escapeHtml(r.name)}</td>
+                                <td>${escapeHtml(r.scope || 'Directory')}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
             `;
         }
 
-        // Load role policy
-        try {
-            const policyResponse = await window.apiClient.getRolePolicies(role.id);
-            if (policyResponse.success) {
-                this.rolePolicy = policyResponse;
-                this.updatePolicyRequirements();
-            }
-        } catch (error) {
-            console.error('Error loading policy:', error);
+        // Show duration from main page
+        const durationInfo = document.getElementById('modal-duration-info');
+        if (durationInfo) {
+            durationInfo.textContent = `Duration: ${this.getSelectedDurationText()} (max duration enforced per role)`;
         }
+
+        // Check policy requirements across all selected roles
+        const needsJustification = this.rolesToActivate.some(r => r.requiresJustification);
+        const needsTicket = this.rolesToActivate.some(r => r.requiresTicket);
+        const needsMfa = this.rolesToActivate.some(r => r.requiresMfa);
+
+        // Update policy requirements display
+        const container = document.getElementById('policy-requirements');
+        if (container) {
+            const reqs = [];
+            if (needsMfa) reqs.push('Multi-factor authentication required');
+            if (needsJustification) reqs.push('Justification is required');
+            if (needsTicket) reqs.push('Ticket number is required');
+
+            if (reqs.length > 0) {
+                container.innerHTML = `
+                    <div class="alert alert-info">
+                        <strong>Policy Requirements:</strong>
+                        <ul>${reqs.map(r => `<li>${r}</li>`).join('')}</ul>
+                    </div>
+                `;
+            } else {
+                container.innerHTML = '';
+            }
+        }
+
+        // Set field requirements
+        const justInput = document.getElementById('justification-input');
+        const ticketInput = document.getElementById('ticket-input');
+        if (justInput) justInput.required = needsJustification;
+        if (ticketInput) ticketInput.required = needsTicket;
+
+        // Clear previous values
+        if (justInput) justInput.value = '';
+        if (ticketInput) ticketInput.value = '';
 
         // Show modal
         const modal = document.getElementById('activation-modal');
         if (modal) {
             modal.classList.remove('hidden');
             document.body.style.overflow = 'hidden';
-        }
-    }
-
-    updatePolicyRequirements() {
-        const container = document.getElementById('policy-requirements');
-        if (!container || !this.rolePolicy) return;
-
-        const requirements = [];
-
-        if (this.rolePolicy.requiresMfa) {
-            requirements.push('🔐 Multi-factor authentication required');
-        }
-
-        if (this.rolePolicy.requiresJustification) {
-            requirements.push('📝 Justification is required');
-        }
-
-        if (this.rolePolicy.requiresTicket) {
-            requirements.push('🎫 Ticket number is required');
-        }
-
-        if (requirements.length > 0) {
-            container.innerHTML = `
-                <div class="alert alert-info">
-                    <strong>Policy Requirements:</strong>
-                    <ul>
-                        ${requirements.map(req => `<li>${req}</li>`).join('')}
-                    </ul>
-                </div>
-            `;
-        } else {
-            container.innerHTML = '';
-        }
-
-        // Update form validation
-        const justificationInput = document.getElementById('justification-input');
-        const ticketInput = document.getElementById('ticket-input');
-
-        if (justificationInput) {
-            justificationInput.required = this.rolePolicy.requiresJustification;
-        }
-
-        if (ticketInput) {
-            ticketInput.required = this.rolePolicy.requiresTicket;
         }
     }
 
@@ -124,31 +145,43 @@ class ActivationManager {
             return;
         }
 
-        const durationMinutes = parseInt(document.getElementById('duration-select').value);
+        const durationMinutes = this.getSelectedDurationMinutes();
         const justification = document.getElementById('justification-input').value;
         const ticketNumber = document.getElementById('ticket-input').value;
 
         try {
             showLoading(true);
+            this.closeDialog();
 
-            const result = await window.apiClient.activateRole(this.currentRole.id, 'User', {
-                durationMinutes,
-                justification: justification || null,
-                ticketNumber: ticketNumber || null
-            });
+            let successCount = 0;
+            let errors = [];
 
-            if (result.success) {
-                showToast(`Role "${this.currentRole.name}" activated successfully for ${durationMinutes} minutes`, 'success');
-                this.closeDialog();
+            for (const role of this.rolesToActivate) {
+                try {
+                    const roleType = role.type === 'Group' ? 'Group' : 'User';
+                    const result = await window.apiClient.activateRole(role.id, roleType, {
+                        durationMinutes,
+                        justification: justification || 'Activated via PIM Web',
+                        ticketNumber: ticketNumber || null
+                    });
 
-                // Refresh roles
-                await window.roleManager.loadRoles();
-
-                if (this.onSuccess) {
-                    this.onSuccess();
+                    if (result.success) {
+                        successCount++;
+                    } else {
+                        errors.push(`${role.name}: ${result.error}`);
+                    }
+                } catch (error) {
+                    errors.push(`${role.name}: ${error.message}`);
                 }
-            } else {
-                showToast(`Activation failed: ${result.error}`, 'error');
+            }
+
+            if (successCount > 0) {
+                showToast(`${successCount} role(s) activated for ${this.getSelectedDurationText()}`, 'success');
+                await window.roleManager.loadRoles();
+                if (this.onSuccess) this.onSuccess();
+            }
+            if (errors.length > 0) {
+                showToast(`Failed: ${errors.join('; ')}`, 'error');
             }
         } catch (error) {
             showToast(`Error: ${error.message}`, 'error');
@@ -163,19 +196,15 @@ class ActivationManager {
             modal.classList.add('hidden');
             document.body.style.overflow = '';
         }
-        this.currentRole = null;
-        this.rolePolicy = null;
+        this.rolesToActivate = [];
         this.onSuccess = null;
     }
 
     showPreferencesDialog() {
         const modal = document.getElementById('preferences-modal');
         if (modal) {
-            // Restore saved theme selection
             const themeSelect = document.getElementById('theme-select');
-            if (themeSelect) {
-                themeSelect.value = localStorage.getItem('pim-theme') || 'auto';
-            }
+            if (themeSelect) themeSelect.value = localStorage.getItem('pim-theme') || 'auto';
             modal.classList.remove('hidden');
             document.body.style.overflow = 'hidden';
         }
@@ -199,8 +228,6 @@ class ActivationManager {
             await window.apiClient.updateUserPreferences(preferences);
             showToast('Preferences saved successfully', 'success');
             this.closePreferencesDialog();
-
-            // Apply theme
             applyThemePreference(preferences.theme);
         } catch (error) {
             showToast(`Error saving preferences: ${error.message}`, 'error');

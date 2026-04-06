@@ -63,19 +63,17 @@ function Invoke-GetActiveRoles {
 #>
 function Invoke-ActivateRole {
     param(
-        [object]
-        $Request,
-
-        [object]
-        $Body
+        [object]$Request,
+        [object]$Body
     )
 
     try {
-        $roleId = $Body.roleId
-        $roleType = $Body.roleType ?? 'User'
-        $justification = $Body.justification
-        $ticketNumber = $Body.ticketNumber
-        $durationMinutes = $Body.durationMinutes ?? 60
+        $data = $WebEvent.Data
+        $roleId = $data.roleId
+        $roleType = $data.roleType ?? 'User'
+        $justification = $data.justification
+        $ticketNumber = $data.ticketNumber
+        $durationMinutes = $data.durationMinutes ?? 60
 
         if ([string]::IsNullOrWhiteSpace($roleId)) {
             Write-PodeJsonResponse -Value @{
@@ -110,16 +108,14 @@ function Invoke-ActivateRole {
 #>
 function Invoke-DeactivateRole {
     param(
-        [object]
-        $Request,
-
-        [object]
-        $Body
+        [object]$Request,
+        [object]$Body
     )
 
     try {
-        $roleId = $Body.roleId
-        $roleType = $Body.roleType ?? 'User'
+        $data = $WebEvent.Data
+        $roleId = $data.roleId
+        $roleType = $data.roleType ?? 'User'
 
         if ([string]::IsNullOrWhiteSpace($roleId)) {
             Write-PodeJsonResponse -Value @{

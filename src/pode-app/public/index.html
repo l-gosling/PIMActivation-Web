@@ -64,86 +64,85 @@
             </header>
 
             <!-- Main Content -->
-            <main class="app-main">
-                <!-- Sidebar -->
-                <aside class="app-sidebar">
-                    <nav class="nav-menu">
-                        <button class="nav-item active" data-tab="eligible">
-                            <span class="icon">▶</span>
-                            <span>Eligible Roles</span>
-                        </button>
-                        <button class="nav-item" data-tab="active">
-                            <span class="icon">✓</span>
-                            <span>Active Roles</span>
-                        </button>
-                    </nav>
-                </aside>
-
-                <!-- Content Area -->
-                <div class="app-content">
-                    <!-- Eligible Roles Tab -->
-                    <section id="eligible-tab" class="tab-content active">
-                        <div class="section-header">
-                            <h2>Eligible Roles</h2>
-                            <p class="section-description">Roles you can activate</p>
-                        </div>
-
-                        <div class="search-box">
-                            <input 
-                                id="search-eligible"
-                                type="text" 
-                                placeholder="Search roles..."
-                                class="search-input"
-                            >
-                            <button class="btn btn-icon">
-                                <span class="icon">🔍</span>
-                            </button>
-                        </div>
-
-                        <div class="roles-container">
-                            <div id="eligible-roles-list" class="roles-list">
+            <main class="app-main-stacked">
+                <!-- Active Roles Section -->
+                <section class="roles-section active-section">
+                    <div class="section-title-bar">
+                        <h2>Active Roles</h2>
+                        <span id="active-count" class="role-count"></span>
+                    </div>
+                    <div class="roles-table-container">
+                        <table class="roles-table" id="active-roles-table">
+                            <thead>
+                                <tr>
+                                    <th class="col-check"></th>
+                                    <th class="col-type">Type</th>
+                                    <th class="col-name">Role Name</th>
+                                    <th class="col-resource">Resource</th>
+                                    <th class="col-scope">Scope</th>
+                                    <th class="col-member">Member Type</th>
+                                    <th class="col-expires">Expires</th>
+                                </tr>
+                            </thead>
+                            <tbody id="active-roles-body">
                                 <!-- Populated by JavaScript -->
-                            </div>
-                        </div>
+                            </tbody>
+                        </table>
+                        <p id="active-empty" class="empty-state hidden">No active roles</p>
+                    </div>
+                </section>
 
-                        <div class="action-bar">
-                            <button id="activate-button" class="btn btn-primary" disabled>
-                                ▶ Activate Selected
-                            </button>
-                            <button id="select-all-button" class="btn btn-secondary">
-                                ☑ Select All
-                            </button>
-                        </div>
-                    </section>
-
-                    <!-- Active Roles Tab -->
-                    <section id="active-tab" class="tab-content hidden">
-                        <div class="section-header">
-                            <h2>Active Roles</h2>
-                            <p class="section-description">Currently activated roles</p>
-                        </div>
-
-                        <div class="search-box">
-                            <input 
-                                id="search-active"
-                                type="text" 
-                                placeholder="Search roles..."
-                                class="search-input"
-                            >
-                        </div>
-
-                        <div class="roles-container">
-                            <div id="active-roles-list" class="roles-list">
+                <!-- Eligible Roles Section -->
+                <section class="roles-section eligible-section">
+                    <div class="section-title-bar">
+                        <h2>Eligible Roles</h2>
+                        <span id="eligible-count" class="role-count"></span>
+                    </div>
+                    <div class="roles-table-container">
+                        <table class="roles-table" id="eligible-roles-table">
+                            <thead>
+                                <tr>
+                                    <th class="col-check"></th>
+                                    <th class="col-name">Role Name</th>
+                                    <th class="col-scope">Scope</th>
+                                    <th class="col-member">MemberType</th>
+                                    <th class="col-duration">Max Duration</th>
+                                    <th class="col-flag">MFA</th>
+                                    <th class="col-flag">Justification</th>
+                                    <th class="col-flag">Ticket</th>
+                                    <th class="col-flag">Approval</th>
+                                </tr>
+                            </thead>
+                            <tbody id="eligible-roles-body">
                                 <!-- Populated by JavaScript -->
-                            </div>
-                        </div>
+                            </tbody>
+                        </table>
+                        <p id="eligible-empty" class="empty-state hidden">No eligible roles</p>
+                    </div>
+                </section>
 
-                        <div class="action-bar">
-                            <button id="deactivate-button" class="btn btn-danger" disabled>
-                                ◼ Deactivate Selected
-                            </button>
-                        </div>
-                    </section>
+                <!-- Action Bar -->
+                <div class="action-bar-bottom">
+                    <div class="duration-selector">
+                        <label>Duration:</label>
+                        <select id="duration-hours" class="form-input form-input-sm">
+                            <option value="1">1h</option>
+                            <option value="2">2h</option>
+                            <option value="4">4h</option>
+                            <option value="8" selected>8h</option>
+                            <option value="12">12h</option>
+                        </select>
+                        <select id="duration-minutes" class="form-input form-input-sm">
+                            <option value="0" selected>0m</option>
+                            <option value="15">15m</option>
+                            <option value="30">30m</option>
+                            <option value="45">45m</option>
+                        </select>
+                        <small>Max duration enforced per role</small>
+                    </div>
+                    <button id="refresh-button" class="btn btn-secondary">Refresh</button>
+                    <button id="deactivate-button" class="btn btn-danger" disabled>Deactivate Roles</button>
+                    <button id="activate-button" class="btn btn-primary" disabled>Activate Roles</button>
                 </div>
             </main>
         </div>
@@ -153,40 +152,34 @@
     <!-- Activation Dialog Modal -->
     <div id="activation-modal" class="modal hidden">
         <div class="modal-overlay"></div>
-        <div class="modal-content">
+        <div class="modal-content modal-content-wide">
             <div class="modal-header">
-                <h2>Activate Role</h2>
+                <h2>Activate Roles</h2>
                 <button class="btn btn-icon close-button">&times;</button>
             </div>
             <div class="modal-body">
-                <div id="modal-role-info" class="role-info">
-                    <!-- Populated by JavaScript -->
+                <div id="modal-role-list" class="modal-role-list">
+                    <!-- Populated by JavaScript: list of roles to activate -->
+                </div>
+
+                <div id="modal-duration-info" class="modal-duration-info">
+                    <!-- Shows duration from main page -->
                 </div>
 
                 <form id="activation-form">
                     <div class="form-group">
-                        <label for="duration-select">Duration:</label>
-                        <select id="duration-select" class="form-input" required>
-                            <option value="60">1 hour</option>
-                            <option value="120">2 hours</option>
-                            <option value="240">4 hours</option>
-                            <option value="480">8 hours</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
                         <label for="justification-input">Justification:</label>
-                        <textarea 
+                        <textarea
                             id="justification-input"
                             class="form-input form-textarea"
-                            placeholder="Explain why you need this role..."
+                            placeholder="Explain why you need these roles..."
                             rows="3"
                         ></textarea>
                     </div>
 
                     <div class="form-group">
                         <label for="ticket-input">Ticket Number (optional):</label>
-                        <input 
+                        <input
                             id="ticket-input"
                             type="text"
                             class="form-input"

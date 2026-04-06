@@ -185,8 +185,9 @@ body {
 }
 
 .btn-large {
-    padding: var(--spacing-md) var(--spacing-lg);
-    font-size: var(--font-size-md);
+    padding: 14px 40px;
+    font-size: var(--font-size-lg);
+    width: 100%;
 }
 
 /* ============================================================================
@@ -245,12 +246,18 @@ body {
     justify-content: center;
     min-height: 100vh;
     background: linear-gradient(135deg, var(--primary-color) 0%, #005A9E 100%);
+    min-height: 100vh;
+    background: linear-gradient(135deg, var(--primary-color) 0%, #005A9E 100%);
 }
 
 .login-card {
     width: 100%;
-    max-width: 400px;
-    padding: var(--spacing-xl);
+    max-width: 480px;
+    padding: 48px 40px;
+    background: var(--neutral-white);
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-lg);
+    text-align: center;
     background-color: var(--neutral-white);
     border-radius: var(--border-radius-lg);
     box-shadow: var(--shadow-lg);
@@ -262,7 +269,7 @@ body {
 }
 
 .login-header h1 {
-    font-size: var(--font-size-xxl);
+    font-size: 32px;
     color: var(--primary-color);
     margin-bottom: var(--spacing-sm);
 }
@@ -368,6 +375,184 @@ body {
     flex: 1;
     gap: 0;
     overflow: hidden;
+}
+
+/* Stacked layout (both sections visible) */
+.app-main-stacked {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--spacing-md);
+    gap: var(--spacing-md);
+}
+
+.roles-section {
+    border: 2px solid var(--primary-color);
+    border-radius: var(--border-radius-lg);
+    overflow: hidden;
+}
+
+.section-title-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--spacing-sm) var(--spacing-md);
+    background: var(--primary-color);
+    color: white;
+}
+
+.section-title-bar h2 {
+    font-size: var(--font-size-lg);
+    font-weight: 700;
+    margin: 0;
+}
+
+.role-count {
+    font-size: var(--font-size-sm);
+    opacity: 0.9;
+}
+
+.roles-table-container {
+    overflow-x: auto;
+    max-height: 40vh;
+    overflow-y: auto;
+}
+
+.roles-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-sm);
+}
+
+.roles-table thead {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+.roles-table th {
+    background: var(--neutral-light);
+    color: var(--neutral-primary);
+    font-weight: 600;
+    padding: 6px 10px;
+    text-align: left;
+    border-bottom: 2px solid var(--neutral-tertiary-alt);
+    white-space: nowrap;
+    font-size: var(--font-size-sm);
+}
+
+.roles-table td {
+    padding: 5px 10px;
+    border-bottom: 1px solid var(--neutral-light-alt);
+    vertical-align: middle;
+}
+
+.roles-table tbody tr:hover {
+    background: var(--neutral-light);
+    cursor: pointer;
+}
+
+.roles-table tbody tr.selected {
+    background: #e6f2ff;
+}
+
+.col-check {
+    width: 30px;
+    text-align: center;
+}
+
+.col-type { width: 70px; }
+.col-name { min-width: 180px; }
+.col-resource { min-width: 200px; }
+.col-scope { min-width: 100px; }
+.col-member { width: 90px; }
+.col-expires { min-width: 140px; }
+.col-duration { width: 90px; }
+.col-flag { width: 80px; text-align: center; }
+
+.type-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.type-badge.entra { background: #0078D4; color: white; }
+.type-badge.group { background: #107C10; color: white; }
+
+.flag-required { color: #DA3B01; font-weight: 600; }
+.flag-yes { color: #107C10; font-weight: 600; }
+.flag-no { color: var(--neutral-tertiary); }
+
+.expires-soon { color: #DA3B01; font-weight: 600; }
+.expires-permanent { color: var(--neutral-secondary); }
+
+.resource-via-group { color: #0078D4; }
+
+/* Action bar at bottom */
+.action-bar-bottom {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    padding: var(--spacing-md);
+    background: var(--neutral-light);
+    border-top: 1px solid var(--neutral-tertiary-alt);
+    flex-shrink: 0;
+}
+
+.duration-selector {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+.duration-selector label {
+    font-weight: 600;
+    font-size: var(--font-size-sm);
+}
+
+.duration-selector small {
+    color: var(--neutral-secondary);
+    font-size: 11px;
+}
+
+.form-input-sm {
+    padding: 4px 8px;
+    font-size: var(--font-size-sm);
+    width: auto;
+}
+
+.action-bar-bottom .btn:last-child {
+    margin-left: auto;
+}
+
+.action-bar-bottom .btn-danger {
+    margin-left: auto;
+}
+
+.empty-state {
+    padding: var(--spacing-lg);
+    text-align: center;
+    color: var(--neutral-secondary);
+}
+
+/* Dark theme table adjustments */
+body.dark-theme .roles-table th {
+    background: var(--neutral-light);
+}
+
+body.dark-theme .roles-table tbody tr:hover {
+    background: var(--neutral-light-alt);
+}
+
+body.dark-theme .roles-table tbody tr.selected {
+    background: #1a3a5c;
+}
+
+body.dark-theme .section-title-bar {
+    background: #005A9E;
 }
 
 .app-sidebar {
@@ -608,6 +793,48 @@ body {
     border-radius: var(--border-radius-lg);
     box-shadow: var(--shadow-lg);
     max-width: 500px;
+    width: 90%;
+}
+
+.modal-content-wide {
+    max-width: 700px;
+}
+
+.modal-role-list {
+    margin-bottom: var(--spacing-md);
+    max-height: 200px;
+    overflow-y: auto;
+    border: 1px solid var(--neutral-tertiary-alt);
+    border-radius: var(--border-radius);
+}
+
+.modal-role-list table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-sm);
+}
+
+.modal-role-list th {
+    background: var(--neutral-light);
+    padding: 4px 8px;
+    text-align: left;
+    font-weight: 600;
+    position: sticky;
+    top: 0;
+}
+
+.modal-role-list td {
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--neutral-light-alt);
+}
+
+.modal-duration-info {
+    padding: var(--spacing-sm) var(--spacing-md);
+    background: var(--neutral-light);
+    border-radius: var(--border-radius);
+    margin-bottom: var(--spacing-md);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
     width: 90%;
     max-height: 90vh;
     overflow-y: auto;
