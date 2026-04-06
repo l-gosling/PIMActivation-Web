@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>PIM Activation - Web</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="icon" type="image/x-icon" href="/images/favicon.ico">
+</head>
+<body>
+    <div id="app" class="app-container">
+        <!-- Login Screen (shown when not authenticated) -->
+        <div id="login-container" class="login-container hidden">
+            <div class="login-card">
+                <div class="login-header">
+                    <h1>PIM Activation</h1>
+                    <p class="subtitle">Privilege Identity Management</p>
+                </div>
+                <div class="login-body">
+                    <button id="login-button" class="btn btn-primary btn-large">
+                        Sign in with Entra ID
+                    </button>
+                </div>
+                <div class="login-footer">
+                    <small>© 2026 Your Organization. All rights reserved.</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Application (shown when authenticated) -->
+        <div id="app-container" class="app-container hidden">
+            <!-- Header -->
+            <header class="app-header">
+                <div class="header-left">
+                    <div class="logo">
+                        <span class="logo-icon">◆</span>
+                        <span class="logo-text">PIM</span>
+                    </div>
+                </div>
+                <div class="header-center">
+                    <h1 class="app-title">Privilege Identity Management</h1>
+                </div>
+                <div class="header-right">
+                    <button id="refresh-button" class="btn btn-icon" title="Refresh roles (Ctrl+R)">
+                        <span class="icon">⟲</span>
+                    </button>
+                    <div class="user-menu">
+                        <button id="user-button" class="btn btn-icon">
+                            <span class="icon">👤</span>
+                            <span id="user-name" class="user-name"></span>
+                        </button>
+                        <div id="user-dropdown" class="dropdown-menu hidden">
+                            <button id="preferences-button" class="dropdown-item">
+                                ⚙️ Preferences
+                            </button>
+                            <hr>
+                            <button id="logout-button" class="dropdown-item">
+                                🚪 Sign Out
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Main Content -->
+            <main class="app-main">
+                <!-- Sidebar -->
+                <aside class="app-sidebar">
+                    <nav class="nav-menu">
+                        <button class="nav-item active" data-tab="eligible">
+                            <span class="icon">▶</span>
+                            <span>Eligible Roles</span>
+                        </button>
+                        <button class="nav-item" data-tab="active">
+                            <span class="icon">✓</span>
+                            <span>Active Roles</span>
+                        </button>
+                    </nav>
+                </aside>
+
+                <!-- Content Area -->
+                <div class="app-content">
+                    <!-- Eligible Roles Tab -->
+                    <section id="eligible-tab" class="tab-content active">
+                        <div class="section-header">
+                            <h2>Eligible Roles</h2>
+                            <p class="section-description">Roles you can activate</p>
+                        </div>
+
+                        <div class="search-box">
+                            <input 
+                                id="search-eligible"
+                                type="text" 
+                                placeholder="Search roles..."
+                                class="search-input"
+                            >
+                            <button class="btn btn-icon">
+                                <span class="icon">🔍</span>
+                            </button>
+                        </div>
+
+                        <div class="roles-container">
+                            <div id="eligible-roles-list" class="roles-list">
+                                <!-- Populated by JavaScript -->
+                            </div>
+                        </div>
+
+                        <div class="action-bar">
+                            <button id="activate-button" class="btn btn-primary" disabled>
+                                ▶ Activate Selected
+                            </button>
+                            <button id="select-all-button" class="btn btn-secondary">
+                                ☑ Select All
+                            </button>
+                        </div>
+                    </section>
+
+                    <!-- Active Roles Tab -->
+                    <section id="active-tab" class="tab-content hidden">
+                        <div class="section-header">
+                            <h2>Active Roles</h2>
+                            <p class="section-description">Currently activated roles</p>
+                        </div>
+
+                        <div class="search-box">
+                            <input 
+                                id="search-active"
+                                type="text" 
+                                placeholder="Search roles..."
+                                class="search-input"
+                            >
+                        </div>
+
+                        <div class="roles-container">
+                            <div id="active-roles-list" class="roles-list">
+                                <!-- Populated by JavaScript -->
+                            </div>
+                        </div>
+
+                        <div class="action-bar">
+                            <button id="deactivate-button" class="btn btn-danger" disabled>
+                                ◼ Deactivate Selected
+                            </button>
+                        </div>
+                    </section>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <!-- Activation Dialog Modal -->
+    <div id="activation-modal" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Activate Role</h2>
+                <button class="btn btn-icon close-button">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="modal-role-info" class="role-info">
+                    <!-- Populated by JavaScript -->
+                </div>
+
+                <form id="activation-form">
+                    <div class="form-group">
+                        <label for="duration-select">Duration:</label>
+                        <select id="duration-select" class="form-input" required>
+                            <option value="60">1 hour</option>
+                            <option value="120">2 hours</option>
+                            <option value="240">4 hours</option>
+                            <option value="480">8 hours</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="justification-input">Justification:</label>
+                        <textarea 
+                            id="justification-input"
+                            class="form-input form-textarea"
+                            placeholder="Explain why you need this role..."
+                            rows="3"
+                        ></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="ticket-input">Ticket Number (optional):</label>
+                        <input 
+                            id="ticket-input"
+                            type="text"
+                            class="form-input"
+                            placeholder="e.g., CHANGE-123456"
+                        >
+                    </div>
+
+                    <div id="policy-requirements" class="policy-requirements">
+                        <!-- Populated by JavaScript -->
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button id="modal-cancel-button" class="btn btn-secondary">Cancel</button>
+                <button id="modal-activate-button" class="btn btn-primary">Activate</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Preferences Modal -->
+    <div id="preferences-modal" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Preferences</h2>
+                <button class="btn btn-icon close-button">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="theme-select">Theme:</label>
+                    <select id="theme-select" class="form-input">
+                        <option value="auto" selected>Auto</option>
+                        <option value="light">Light</option>
+                        <option value="dark">Dark</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="autorefresh-checkbox">
+                        <input id="autorefresh-checkbox" type="checkbox">
+                        Auto-refresh roles every 5 minutes
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="preferences-cancel-button" class="btn btn-secondary">Cancel</button>
+                <button id="preferences-save-button" class="btn btn-primary">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Loading Indicator -->
+    <div id="loading-indicator" class="loading-indicator hidden">
+        <div class="spinner"></div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="/js/api-client.js"></script>
+    <script src="/js/app.js"></script>
+    <script src="/js/auth.js"></script>
+    <script src="/js/roles.js"></script>
+    <script src="/js/activation.js"></script>
+</body>
+</html>

@@ -1,0 +1,38 @@
+services:
+  pim-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pim-activation-web
+    ports:
+      - "${PODE_PORT:-8080}:8080"
+    environment:
+      - ENTRA_TENANT_ID=${ENTRA_TENANT_ID:-your-tenant-id}
+      - ENTRA_CLIENT_ID=${ENTRA_CLIENT_ID:-your-client-id}
+      - ENTRA_CLIENT_SECRET=${ENTRA_CLIENT_SECRET:-your-client-secret}
+      - ENTRA_REDIRECT_URI=${ENTRA_REDIRECT_URI:-http://localhost/api/auth/callback}
+      - PODE_PORT=8080
+      - PODE_MODE=${PODE_MODE:-production}
+      - LOG_LEVEL=${LOG_LEVEL:-Information}
+      - SESSION_TIMEOUT=${SESSION_TIMEOUT:-3600}
+    volumes:
+      - ./config:/etc/pim-config:ro
+      - pim-data:/var/pim-data
+      - ./logs:/var/log/pim:rw
+    networks:
+      - pim-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  pim-data:
+    driver: local
+
+networks:
+  pim-network:
+    driver: bridge
