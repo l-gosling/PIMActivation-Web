@@ -124,6 +124,14 @@ function Invoke-ActivateRole {
             return
         }
 
+        if ($durationMinutes -lt 1 -or $durationMinutes -gt 1440) {
+            Write-PodeJsonResponse -Value @{
+                success = $false
+                error   = 'Duration must be between 1 and 1440 minutes'
+            } -StatusCode 400
+            return
+        }
+
         $duration = [timespan]::FromMinutes($durationMinutes)
 
         $result = Invoke-PIMRoleActivationForWeb -RoleId $roleId -UserContext $WebEvent.Auth -RoleType $roleType -DirectoryScopeId $directoryScopeId -Justification $justification -TicketNumber $ticketNumber -Duration $duration

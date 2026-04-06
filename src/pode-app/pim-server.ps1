@@ -76,6 +76,18 @@ Start-PodeServer -Name 'PIM-Activation' -Threads 5 {
     Use-PodeScript -Path (Join-Path $PSScriptRoot 'routes' 'Roles.ps1')
     Use-PodeScript -Path (Join-Path $PSScriptRoot 'routes' 'Config.ps1')
 
+    # Security response headers on all routes
+    Add-PodeMiddleware -Name 'SecurityHeaders' -ScriptBlock {
+        Add-PodeHeader -Name 'X-Content-Type-Options' -Value 'nosniff'
+        Add-PodeHeader -Name 'X-Frame-Options' -Value 'DENY'
+        Add-PodeHeader -Name 'Referrer-Policy' -Value 'strict-origin-when-cross-origin'
+        Add-PodeHeader -Name 'Permissions-Policy' -Value 'camera=(), microphone=(), geolocation=()'
+        if ($WebEvent.Request.Url.Scheme -eq 'https') {
+            Add-PodeHeader -Name 'Strict-Transport-Security' -Value 'max-age=31536000; includeSubDomains'
+        }
+        return $true
+    }
+
     # Initialize shared session state
     Set-PodeState -Name 'AuthSessions' -Value @{} | Out-Null
 

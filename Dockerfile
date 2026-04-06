@@ -37,10 +37,10 @@ RUN mkdir -p /var/pim-data/preferences \
     /etc/pim-config \
     /etc/pim-certs
 
-# Set proper permissions
+# Set proper permissions (700 for data dirs — only the app process needs access)
 RUN chmod -R 755 /app && \
-    chmod -R 777 /var/pim-data && \
-    chmod -R 777 /etc/pim-config && \
+    chmod -R 700 /var/pim-data && \
+    chmod -R 700 /etc/pim-config && \
     chmod -R 755 /etc/pim-certs
 
 # Expose port
