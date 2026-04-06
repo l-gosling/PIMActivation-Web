@@ -102,6 +102,7 @@ function Get-DefaultPreferences {
         autoRefresh      = $false
         refreshInterval  = 300
         showAzureRoles   = $true
+        profiles         = @()
     }
 }
 
@@ -117,6 +118,7 @@ function Get-AllowedPreferences {
         autoRefresh      = 'bool'
         refreshInterval  = 'int'
         showAzureRoles   = 'bool'
+        profiles         = 'json'
     }
 }
 
@@ -219,6 +221,7 @@ function Write-UserPreferences {
             'int'    { $clean[$key] = [int]$val }
             'bool'   { $clean[$key] = [bool]$val }
             'string' { $clean[$key] = [string]$val }
+            'json'   { $clean[$key] = $val }
         }
     }
 

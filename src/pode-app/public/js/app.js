@@ -213,6 +213,9 @@ class PIMApplication {
             // Load initial role data
             await window.roleManager.loadRoles();
 
+            // Load saved profiles
+            await window.profileManager.loadProfiles();
+
             this.initialized = true;
             console.log('PIM Application initialized');
         } catch (error) {
