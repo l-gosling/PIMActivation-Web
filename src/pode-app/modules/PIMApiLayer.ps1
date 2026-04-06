@@ -293,77 +293,76 @@ function Get-PIMEligibleRolesForWeb {
             }
         }
 
-        # Batch fetch all Entra policies in one call, then match to roles
-        Write-Host "Fetching policies for $($allRoles.Count) eligible roles"
+        # Batch fetch Entra policies — get all assignments in one call, dedupe policy IDs
         $policyCache = @{}
         try {
-            # Get all DirectoryRole policy assignments at once
             $entraRoleIds = @($allRoles | Where-Object { $_.type -eq 'Entra' } | ForEach-Object { $_.id } | Select-Object -Unique)
             if ($entraRoleIds.Count -gt 0) {
                 $filter = [System.Web.HttpUtility]::UrlEncode("scopeId eq '/' and scopeType eq 'DirectoryRole'")
                 $allAssignments = Invoke-GraphApi -AccessToken $accessToken -Endpoint "/policies/roleManagementPolicyAssignments?`$filter=$filter"
+
+                # Map roleDefinitionId -> policyId, and collect unique policyIds
+                $roleToPolicyId = @{}
+                $uniquePolicyIds = @{}
                 foreach ($a in @($allAssignments.value)) {
-                    if ($a.roleDefinitionId -and $a.roleDefinitionId -in $entraRoleIds -and -not $policyCache.ContainsKey($a.roleDefinitionId)) {
-                        try {
-                            $policy = Invoke-GraphApi -AccessToken $accessToken -Endpoint "/policies/roleManagementPolicies/$($a.policyId)?`$expand=rules"
-                            $info = @{ maxDurationHours = 8; requiresMfa = $false; requiresJustification = $false; requiresTicket = $false; requiresApproval = $false }
-                            foreach ($rule in @($policy.rules)) {
-                                $rt = $rule.'@odata.type'
-                                if ($rt -eq '#microsoft.graph.unifiedRoleManagementPolicyExpirationRule' -and $rule.maximumDuration) {
-                                    try { $info.maxDurationHours = [int][System.Xml.XmlConvert]::ToTimeSpan($rule.maximumDuration).TotalHours } catch {}
-                                }
-                                elseif ($rt -eq '#microsoft.graph.unifiedRoleManagementPolicyEnablementRule' -and $rule.enabledRules) {
-                                    $enabled = @($rule.enabledRules)
-                                    $info.requiresJustification = 'Justification' -in $enabled
-                                    $info.requiresTicket = 'Ticketing' -in $enabled
-                                    $info.requiresMfa = 'MultiFactorAuthentication' -in $enabled
-                                }
-                                elseif ($rt -eq '#microsoft.graph.unifiedRoleManagementPolicyApprovalRule' -and $rule.setting -and $rule.setting.isApprovalRequired) {
-                                    $info.requiresApproval = $true
-                                }
-                            }
-                            $policyCache[$a.roleDefinitionId] = $info
-                        }
-                        catch { Write-Host "Policy fetch failed for $($a.roleDefinitionId): $($_.Exception.Message)" }
+                    if ($a.roleDefinitionId -and $a.roleDefinitionId -in $entraRoleIds) {
+                        $roleToPolicyId[$a.roleDefinitionId] = $a.policyId
+                        $uniquePolicyIds[$a.policyId] = $true
                     }
                 }
-            }
 
-            # Fetch group policies individually (usually few)
-            $groupRoleIds = @($allRoles | Where-Object { $_.type -eq 'Group' } | ForEach-Object { $_.id } | Select-Object -Unique)
-            foreach ($gid in $groupRoleIds) {
-                try {
-                    $p = Get-PIMRolePolicyForWeb -RoleId $gid -AccessToken $accessToken -RoleType 'Group'
-                    if ($p.success) { $policyCache["group_$gid"] = $p }
+                # Fetch each unique policy only once
+                $policyById = @{}
+                foreach ($polId in $uniquePolicyIds.Keys) {
+                    try {
+                        $policy = Invoke-GraphApi -AccessToken $accessToken -Endpoint "/policies/roleManagementPolicies/$polId`?`$expand=rules"
+                        $info = @{ maxDurationHours = 8; requiresMfa = $false; requiresJustification = $false; requiresTicket = $false; requiresApproval = $false }
+                        foreach ($rule in @($policy.rules)) {
+                            $rt = $rule.'@odata.type'
+                            if ($rt -eq '#microsoft.graph.unifiedRoleManagementPolicyExpirationRule' -and $rule.maximumDuration) {
+                                try { $info.maxDurationHours = [int][System.Xml.XmlConvert]::ToTimeSpan($rule.maximumDuration).TotalHours } catch {}
+                            }
+                            elseif ($rt -eq '#microsoft.graph.unifiedRoleManagementPolicyEnablementRule' -and $rule.enabledRules) {
+                                $enabled = @($rule.enabledRules)
+                                $info.requiresJustification = 'Justification' -in $enabled
+                                $info.requiresTicket = 'Ticketing' -in $enabled
+                                $info.requiresMfa = 'MultiFactorAuthentication' -in $enabled
+                            }
+                            elseif ($rt -eq '#microsoft.graph.unifiedRoleManagementPolicyApprovalRule' -and $rule.setting -and $rule.setting.isApprovalRequired) {
+                                $info.requiresApproval = $true
+                            }
+                        }
+                        $policyById[$polId] = $info
+                    }
+                    catch { Write-Host "Policy fetch failed for $polId`: $($_.Exception.Message)" }
                 }
-                catch { }
+
+                # Map policies back to roles
+                foreach ($roleId in $roleToPolicyId.Keys) {
+                    $polId = $roleToPolicyId[$roleId]
+                    if ($policyById.ContainsKey($polId)) {
+                        $policyCache[$roleId] = $policyById[$polId]
+                    }
+                }
+                Write-Host "Policies: $($uniquePolicyIds.Count) unique policies for $($entraRoleIds.Count) Entra roles"
             }
         }
         catch {
             Write-Host "Batch policy fetch error: $($_.Exception.Message)"
         }
 
-        # Apply policies to roles
+        # Apply policies to roles (defaults for Group/Azure when no policy found)
         foreach ($role in $allRoles) {
-            $key = if ($role.type -eq 'Group') { "group_$($role.id)" } else { $role.id }
-            if ($policyCache.ContainsKey($key)) {
-                $p = $policyCache[$key]
+            if ($role.type -eq 'Entra' -and $policyCache.ContainsKey($role.id)) {
+                $p = $policyCache[$role.id]
                 $role.requiresMfa = $p.requiresMfa
                 $role.requiresJustification = $p.requiresJustification
                 $role.requiresTicket = $p.requiresTicket
                 $role.requiresApproval = $p.requiresApproval
                 $role.maxDurationHours = $p.maxDurationHours
             }
-            else {
-                # Default policies when lookup fails or not available
-                switch ($role.type) {
-                    'Group' {
-                        $role.requiresJustification = $true
-                    }
-                    'AzureResource' {
-                        $role.requiresJustification = $true
-                    }
-                }
+            elseif ($role.type -in @('Group', 'AzureResource')) {
+                $role.requiresJustification = $true
             }
         }
 
@@ -413,24 +412,12 @@ function Get-PIMActiveRolesForWeb {
         if ($IncludeEntraRoles) {
             try {
                 $filter = [System.Web.HttpUtility]::UrlEncode("principalId eq '$userId'")
-                $entraRoles = Invoke-GraphApi -AccessToken $accessToken -Endpoint "/roleManagement/directory/roleAssignmentScheduleInstances?`$filter=$filter"
+                $entraRoles = Invoke-GraphApi -AccessToken $accessToken -Endpoint "/roleManagement/directory/roleAssignmentScheduleInstances?`$filter=$filter&`$expand=roleDefinition"
 
-                # Need role definitions for display names
-                $roleDefCache = @{}
                 foreach ($r in @($entraRoles.value)) {
                     $roleDefId = $r.roleDefinitionId
                     if (-not $roleDefId) { continue }
-
-                    if (-not $roleDefCache.ContainsKey($roleDefId)) {
-                        try {
-                            $roleDef = Invoke-GraphApi -AccessToken $accessToken -Endpoint "/roleManagement/directory/roleDefinitions/$roleDefId`?`$select=displayName"
-                            $roleDefCache[$roleDefId] = $roleDef.displayName
-                        }
-                        catch {
-                            $roleDefCache[$roleDefId] = "Role $roleDefId"
-                        }
-                    }
-                    $roleName = $roleDefCache[$roleDefId]
+                    $roleName = if ($r.roleDefinition) { $r.roleDefinition.displayName } else { "Role $roleDefId" }
 
                     $scope = $r.directoryScopeId ?? '/'
                     $scopeDisplay = 'Directory'
