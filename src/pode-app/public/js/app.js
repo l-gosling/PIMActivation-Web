@@ -207,11 +207,15 @@ class PIMApplication {
         if (this.theme.groupColor) root.style.setProperty('--group-color', this.theme.groupColor);
         if (this.theme.azureColor) root.style.setProperty('--azure-color', this.theme.azureColor);
 
-        // Show copyright footer if configured
-        const footer = document.getElementById('app-footer');
-        if (footer && this.theme.copyright) {
-            footer.textContent = this.theme.copyright;
-            footer.classList.remove('hidden');
+        // Show copyright in both footers if configured
+        if (this.theme.copyright) {
+            for (const id of ['app-footer', 'login-footer']) {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.textContent = this.theme.copyright;
+                    el.classList.remove('hidden');
+                }
+            }
         }
     }
 

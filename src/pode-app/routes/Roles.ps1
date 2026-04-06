@@ -18,6 +18,12 @@ function Invoke-GetEligibleRoles {
     )
 
     try {
+        $sessionId = Get-CookieValue -Name 'pim_session'
+        if (-not $sessionId -or -not (Get-AuthSession -SessionId $sessionId)) {
+            Write-PodeJsonResponse -Value @{ success = $false; error = 'Not authenticated' } -StatusCode 401
+            return
+        }
+
         $config = Get-AllConfig
 
         # Azure roles: only if enabled in env AND user hasn't disabled in preferences
@@ -43,9 +49,10 @@ function Invoke-GetEligibleRoles {
         Write-PodeJsonResponse -Value $result -StatusCode 200
     }
     catch {
+        Write-Host "Route error: $($_.Exception.Message)"
         Write-PodeJsonResponse -Value @{
             success = $false
-            error   = $_.Exception.Message
+            error   = 'An internal error occurred'
         } -StatusCode 500
     }
 }
@@ -61,6 +68,12 @@ function Invoke-GetActiveRoles {
     )
 
     try {
+        $sessionId = Get-CookieValue -Name 'pim_session'
+        if (-not $sessionId -or -not (Get-AuthSession -SessionId $sessionId)) {
+            Write-PodeJsonResponse -Value @{ success = $false; error = 'Not authenticated' } -StatusCode 401
+            return
+        }
+
         $config = Get-AllConfig
 
         $showAzure = $config.IncludeAzureResources
@@ -80,9 +93,10 @@ function Invoke-GetActiveRoles {
         Write-PodeJsonResponse -Value $result -StatusCode 200
     }
     catch {
+        Write-Host "Route error: $($_.Exception.Message)"
         Write-PodeJsonResponse -Value @{
             success = $false
-            error   = $_.Exception.Message
+            error   = 'An internal error occurred'
         } -StatusCode 500
     }
 }
@@ -98,6 +112,12 @@ function Invoke-ActivateRole {
     )
 
     try {
+        $sessionId = Get-CookieValue -Name 'pim_session'
+        if (-not $sessionId -or -not (Get-AuthSession -SessionId $sessionId)) {
+            Write-PodeJsonResponse -Value @{ success = $false; error = 'Not authenticated' } -StatusCode 401
+            return
+        }
+
         $data = $WebEvent.Data
         $roleId = $data.roleId
         $roleType = $data.roleType ?? 'User'
@@ -106,10 +126,10 @@ function Invoke-ActivateRole {
         $ticketNumber = $data.ticketNumber
         $durationMinutes = $data.durationMinutes ?? 60
 
-        if ([string]::IsNullOrWhiteSpace($roleId)) {
+        if ([string]::IsNullOrWhiteSpace($roleId) -or -not ($roleId -as [guid])) {
             Write-PodeJsonResponse -Value @{
                 success = $false
-                error   = 'roleId is required'
+                error   = 'Invalid roleId'
             } -StatusCode 400
             return
         }
@@ -126,6 +146,7 @@ function Invoke-ActivateRole {
         }
     }
     catch {
+        Write-Host "Activate error: $($_.Exception.Message)"
         Write-PodeJsonResponse -Value @{
             success = $false
             error   = $_.Exception.Message
@@ -144,15 +165,21 @@ function Invoke-DeactivateRole {
     )
 
     try {
+        $sessionId = Get-CookieValue -Name 'pim_session'
+        if (-not $sessionId -or -not (Get-AuthSession -SessionId $sessionId)) {
+            Write-PodeJsonResponse -Value @{ success = $false; error = 'Not authenticated' } -StatusCode 401
+            return
+        }
+
         $data = $WebEvent.Data
         $roleId = $data.roleId
         $roleType = $data.roleType ?? 'User'
         $directoryScopeId = $data.directoryScopeId ?? '/'
 
-        if ([string]::IsNullOrWhiteSpace($roleId)) {
+        if ([string]::IsNullOrWhiteSpace($roleId) -or -not ($roleId -as [guid])) {
             Write-PodeJsonResponse -Value @{
                 success = $false
-                error   = 'roleId is required'
+                error   = 'Invalid roleId'
             } -StatusCode 400
             return
         }
@@ -167,6 +194,7 @@ function Invoke-DeactivateRole {
         }
     }
     catch {
+        Write-Host "Deactivate error: $($_.Exception.Message)"
         Write-PodeJsonResponse -Value @{
             success = $false
             error   = $_.Exception.Message
@@ -188,10 +216,16 @@ function Invoke-GetRolePolicies {
     )
 
     try {
-        if ([string]::IsNullOrWhiteSpace($RoleId)) {
+        $sessionId = Get-CookieValue -Name 'pim_session'
+        if (-not $sessionId -or -not (Get-AuthSession -SessionId $sessionId)) {
+            Write-PodeJsonResponse -Value @{ success = $false; error = 'Not authenticated' } -StatusCode 401
+            return
+        }
+
+        if ([string]::IsNullOrWhiteSpace($RoleId) -or -not ($RoleId -as [guid])) {
             Write-PodeJsonResponse -Value @{
                 success = $false
-                error   = 'roleId is required'
+                error   = 'Invalid roleId'
             } -StatusCode 400
             return
         }
@@ -201,9 +235,10 @@ function Invoke-GetRolePolicies {
         Write-PodeJsonResponse -Value $result -StatusCode 200
     }
     catch {
+        Write-Host "Route error: $($_.Exception.Message)"
         Write-PodeJsonResponse -Value @{
             success = $false
-            error   = $_.Exception.Message
+            error   = 'An internal error occurred'
         } -StatusCode 500
     }
 }

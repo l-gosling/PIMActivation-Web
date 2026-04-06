@@ -195,7 +195,6 @@ function Invoke-AuthCallback {
         # Exchange refresh token for Azure Management token
         $azureToken = $null
         $refreshToken = $tokenResponse.refresh_token
-        Write-Host "Refresh token present: $($null -ne $refreshToken), length: $(if ($refreshToken) { $refreshToken.Length } else { 0 })"
         if ($refreshToken) {
             try {
                 $azCurlArgs = @(
@@ -213,7 +212,7 @@ function Invoke-AuthCallback {
                     Write-Host "Azure Management token acquired"
                 }
                 else {
-                    Write-Host "Azure token failed (non-fatal): $($azTokenResponse.error_description ?? $azTokenResponse.error)"
+                    Write-Host "Azure token exchange failed (non-fatal)"
                 }
             }
             catch {
@@ -230,20 +229,21 @@ function Invoke-AuthCallback {
             AccessToken       = $tokenResponse.access_token
             AzureAccessToken  = $azureToken
             RefreshToken      = $tokenResponse.refresh_token
-            ExpiresAt         = (Get-Date).AddSeconds([int]($tokenResponse.expires_in ?? 3600))
+            ExpiresAt         = (Get-Date).AddSeconds([int]($env:SESSION_TIMEOUT ?? '3600'))
             CreatedAt         = Get-Date
         }
 
         Write-Host "Session created for: $($claims.name)"
 
+        $sessionTimeout = [int]($env:SESSION_TIMEOUT ?? '3600')
         $isHttps = (Test-Path ($env:PODE_CERT_PATH ?? '/etc/pim-certs/cert.pem'))
-        Set-PodeCookie -Name 'pim_session' -Value $sessionId -ExpiryDate ([datetime]::UtcNow.AddHours(1)) -HttpOnly -Secure:$isHttps
+        Set-PodeCookie -Name 'pim_session' -Value $sessionId -ExpiryDate ([datetime]::UtcNow.AddSeconds($sessionTimeout)) -HttpOnly -Secure:$isHttps
         Remove-PodeCookie -Name 'oauth_state'
 
         Move-PodeResponseUrl -Url '/'
     }
     catch {
-        Write-Host "OAuth callback error: $($_.Exception.Message)"
+        Write-Host "OAuth callback error occurred"
         Move-PodeResponseUrl -Url "/?error=$([System.Web.HttpUtility]::UrlEncode($_.Exception.Message))"
     }
 }

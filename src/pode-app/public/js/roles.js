@@ -234,7 +234,8 @@ class RoleManager {
                     ? `[${role.type}] ${role.name}${role.scope && role.scope !== 'Directory' ? ' (' + role.scope + ')' : ''}`
                     : uid;
                 try {
-                    const result = await window.apiClient.deactivateRole(role?.id || uid, role?.type || 'User', {
+                    const roleType = role?.type === 'Group' ? 'Group' : role?.type === 'AzureResource' ? 'AzureResource' : 'User';
+                    const result = await window.apiClient.deactivateRole(role?.id || uid, roleType, {
                         directoryScopeId: role?.directoryScopeId || '/'
                     });
                     if (result.success) {

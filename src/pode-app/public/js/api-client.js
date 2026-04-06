@@ -28,17 +28,17 @@ class ApiClient {
                 credentials: 'same-origin'
             });
 
+            const data = await response.json();
+
             if (response.status === 401) {
                 if (!silent) {
                     window.dispatchEvent(new CustomEvent('auth:expired'));
                 }
-                throw new Error('Session expired. Please log in again.');
+                throw new Error(data?.error || 'Session expired. Please log in again.');
             }
 
-            const data = await response.json();
-
             if (!response.ok) {
-                throw new Error(data.message || data.error || `HTTP ${response.status}`);
+                throw new Error(data?.message || data?.error || `HTTP ${response.status}`);
             }
 
             return data;
@@ -64,7 +64,7 @@ class ApiClient {
     async getActiveRoles()   { return this.get('/api/roles/active'); }
 
     async activateRole(roleId, roleType, options = {}) {
-        return this.post('/api/roles/activate', {
+        return this.silentPost('/api/roles/activate', {
             roleId, roleType,
             directoryScopeId: options.directoryScopeId || '/',
             justification: options.justification,
@@ -74,7 +74,7 @@ class ApiClient {
     }
 
     async deactivateRole(roleId, roleType = 'User', options = {}) {
-        return this.post('/api/roles/deactivate', {
+        return this.silentPost('/api/roles/deactivate', {
             roleId, roleType,
             directoryScopeId: options.directoryScopeId || '/'
         });

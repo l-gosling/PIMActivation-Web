@@ -9,6 +9,39 @@
 #>
 
 function Get-GraphBaseUrl { return 'https://graph.microsoft.com/v1.0' }
+
+<#
+.SYNOPSIS
+    Refresh the Graph access token using the stored refresh token
+#>
+function Update-SessionTokens {
+    $sessionId = Get-CookieValue -Name 'pim_session'
+    if (-not $sessionId) { return $null }
+    $session = Get-AuthSession -SessionId $sessionId
+    if (-not $session -or -not $session.RefreshToken) { return $null }
+
+    $oauth = Get-OAuthConfig
+    $curlArgs = @(
+        '-s', '-4', '-X', 'POST', $oauth.TokenUrl,
+        '-d', "client_id=$($oauth.ClientId)",
+        '-d', "client_secret=$([System.Web.HttpUtility]::UrlEncode($oauth.ClientSecret))",
+        '-d', "refresh_token=$([System.Web.HttpUtility]::UrlEncode($session.RefreshToken))",
+        '-d', 'grant_type=refresh_token',
+        '-d', "scope=$([System.Web.HttpUtility]::UrlEncode($oauth.Scopes))"
+    )
+    $tokenJson = & curl @curlArgs 2>&1
+    $tokenResponse = $tokenJson | ConvertFrom-Json
+    if ($tokenResponse.error) { return $null }
+
+    # Update session with new tokens
+    $session.AccessToken = $tokenResponse.access_token
+    if ($tokenResponse.refresh_token) { $session.RefreshToken = $tokenResponse.refresh_token }
+    $session.ExpiresAt = (Get-Date).AddSeconds([int]($env:SESSION_TIMEOUT ?? '3600'))
+    Set-AuthSession -SessionId $sessionId -Data $session
+    Write-Host "Graph token refreshed"
+
+    return $tokenResponse.access_token
+}
 function Get-AzureBaseUrl { return 'https://management.azure.com' }
 
 <#
@@ -117,7 +150,42 @@ function Invoke-GraphApi {
     $result = $responseText | ConvertFrom-Json -AsHashtable
 
     if ($result.ContainsKey('error') -and $result.error) {
-        throw "Graph API error: $($result.error.message) ($($result.error.code))"
+        $errorCode = $result.error.code
+        $errorMsg = $result.error.message
+
+        # Auto-refresh token on 401/InvalidAuthenticationToken and retry once
+        if ($errorCode -eq 'InvalidAuthenticationToken') {
+            $newToken = Update-SessionTokens
+            if ($newToken) {
+                # Retry the request with the new token
+                $retryCurlArgs = @(
+                    '-s', '-4', '-X', $Method,
+                    '-H', "Authorization: Bearer $newToken",
+                    '-H', 'Content-Type: application/json'
+                )
+                if ($Body) {
+                    $retryBodyFile = "/tmp/graph_retry_$([guid]::NewGuid().ToString('N').Substring(0,8)).json"
+                    $Body | Set-Content -Path $retryBodyFile -Encoding UTF8 -NoNewline
+                    $retryCurlArgs += @('-d', "@$retryBodyFile")
+                }
+                $retryCurlArgs += $url
+                try {
+                    $retryRaw = & /usr/bin/curl @retryCurlArgs 2>&1
+                    $retryText = if ($null -eq $retryRaw) { '' } elseif ($retryRaw -is [array]) { $retryRaw -join "`n" } else { "$retryRaw" }
+                    $retryResult = $retryText.Trim() | ConvertFrom-Json -AsHashtable
+                    if ($retryBodyFile -and (Test-Path $retryBodyFile)) { Remove-Item $retryBodyFile -Force -ErrorAction SilentlyContinue }
+                    if ($retryResult.ContainsKey('error') -and $retryResult.error) {
+                        throw "Graph API error: $($retryResult.error.message) ($($retryResult.error.code))"
+                    }
+                    return $retryResult
+                }
+                finally {
+                    if ($retryBodyFile -and (Test-Path $retryBodyFile)) { Remove-Item $retryBodyFile -Force -ErrorAction SilentlyContinue }
+                }
+            }
+        }
+
+        throw "Graph API error: $errorMsg ($errorCode)"
     }
 
     return $result
@@ -220,18 +288,19 @@ function Get-PIMEligibleRolesForWeb {
 
                 foreach ($r in $groupValues) {
                     $groupName = $(if ($r.group) { $r.group.displayName } else { "Group $($r.groupId)" })
+                    $accessId = $r.accessId ?? 'member'
                     $null = $allRoles.Add(@{
                         id               = $r.groupId
-                        uid              = "group|$($r.groupId)"
+                        uid              = "group|$($r.groupId)|$accessId"
                         name             = $groupName
                         type             = 'Group'
                         status           = 'Eligible'
                         source           = 'PIMGroup'
                         resourceName     = $groupName
-                        scope            = 'Directory'
+                        scope            = "Directory ($(([string]$accessId).Substring(0,1).ToUpper() + ([string]$accessId).Substring(1)))"
                         startDateTime    = $r.startDateTime
                         endDateTime      = $r.endDateTime
-                        memberType       = ($r.accessId ?? 'member')
+                        memberType       = 'Direct'
                         directoryScopeId = $null
                         principalId      = $r.principalId
                     })
@@ -252,10 +321,10 @@ function Get-PIMEligibleRolesForWeb {
                     foreach ($sub in @($subs.value)) {
                         try {
                             $subScope = "/subscriptions/$($sub.subscriptionId)"
-                            $eligible = Invoke-AzureApi -AccessToken $azToken -Endpoint "$subScope/providers/Microsoft.Authorization/roleEligibilityScheduleInstances" -ApiVersion '2020-10-01'
+                            $eligible = Invoke-AzureApi -AccessToken $azToken -Endpoint "$subScope/providers/Microsoft.Authorization/roleEligibilityScheduleInstances?`$filter=asTarget()" -ApiVersion '2020-10-01'
                             foreach ($r in @($eligible.value)) {
                                 # Only include roles for the current user
-                                if ($r.properties.principalId -ne $userId) { continue }
+                                # asTarget() filter already scopes to current user
                                 $roleName = $r.properties.expandedProperties.roleDefinition.displayName ?? 'Azure Role'
                                 $scopeDisplay = $sub.displayName
                                 if ($r.properties.scope -ne $subScope) {
@@ -469,18 +538,19 @@ function Get-PIMActiveRolesForWeb {
 
                 foreach ($r in @($groupRoles.value)) {
                     $groupName = $(if ($r.group) { $r.group.displayName } else { "Group $($r.groupId)" })
+                    $accessId = $r.accessId ?? 'member'
                     $null = $allRoles.Add(@{
                         id               = $r.groupId
-                        uid              = "group|$($r.groupId)"
+                        uid              = "group|$($r.groupId)|$accessId"
                         name             = $groupName
                         type             = 'Group'
                         status           = 'Active'
                         source           = 'PIMGroup'
                         resourceName     = $groupName
-                        scope            = 'Directory'
+                        scope            = "Directory ($(([string]$accessId).Substring(0,1).ToUpper() + ([string]$accessId).Substring(1)))"
                         startDateTime    = $r.startDateTime
                         endDateTime      = $r.endDateTime
-                        memberType       = ($r.accessId ?? 'member')
+                        memberType       = 'Direct'
                         directoryScopeId = $null
                         principalId      = $r.principalId
                     })
@@ -500,9 +570,9 @@ function Get-PIMActiveRolesForWeb {
                     foreach ($sub in @($subs.value)) {
                         try {
                             $subScope = "/subscriptions/$($sub.subscriptionId)"
-                            $active = Invoke-AzureApi -AccessToken $azToken -Endpoint "$subScope/providers/Microsoft.Authorization/roleAssignmentScheduleInstances" -ApiVersion '2020-10-01'
+                            $active = Invoke-AzureApi -AccessToken $azToken -Endpoint "$subScope/providers/Microsoft.Authorization/roleAssignmentScheduleInstances?`$filter=asTarget()" -ApiVersion '2020-10-01'
+                            Write-Host "Azure active for $($sub.displayName): $(@($active.value).Count) role(s)"
                             foreach ($r in @($active.value)) {
-                                if ($r.properties.principalId -ne $userId) { continue }
                                 $roleName = $r.properties.expandedProperties.roleDefinition.displayName ?? 'Azure Role'
                                 $scopeDisplay = $sub.displayName
                                 if ($r.properties.scope -ne $subScope) {
@@ -672,11 +742,21 @@ function Invoke-PIMRoleActivationForWeb {
         }
     }
     catch {
+        $errMsg = $_.Exception.Message
+
+        # Detect MFA / authentication context errors and provide clear message
+        if ($errMsg -match 'AcrsValidationFailed|MultiFactorAuthentication|StrongAuthenticationRequired|InteractionRequired|claims') {
+            $errMsg = "This role requires MFA or additional authentication. Please sign out and sign back in, then try again."
+        }
+        elseif ($errMsg -match 'RoleAssignmentExists|already active') {
+            $errMsg = "This role is already active or a request is pending."
+        }
+
         return @{
             roleId    = $RoleId
             status    = 'failed'
             success   = $false
-            error     = $_.Exception.Message
+            error     = $errMsg
             timestamp = (Get-Date -AsUTC).ToString('o')
         }
     }
