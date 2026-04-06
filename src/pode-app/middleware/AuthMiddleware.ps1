@@ -146,6 +146,58 @@ function Get-OAuthConfig {
 
 <#
 .SYNOPSIS
+    Set a cookie with SameSite attribute (Pode 2.x lacks native SameSite support)
+.DESCRIPTION
+    Constructs the Set-Cookie header manually to include the SameSite attribute,
+    and registers the cookie in Pode's PendingCookies for Remove-PodeCookie compatibility.
+.PARAMETER Name
+    Cookie name
+.PARAMETER Value
+    Cookie value
+.PARAMETER ExpiryDate
+    Absolute expiry date (UTC)
+.PARAMETER HttpOnly
+    Prevent JavaScript access
+.PARAMETER Secure
+    Only send over HTTPS
+.PARAMETER SameSite
+    SameSite attribute: 'Strict', 'Lax', or 'None'
+#>
+function Set-SecureCookie {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [string]$Value = '',
+        [datetime]$ExpiryDate,
+        [switch]$HttpOnly,
+        [switch]$Secure,
+        [ValidateSet('Strict', 'Lax', 'None')]
+        [string]$SameSite = 'Lax'
+    )
+
+    $parts = @("$Name=$Value", 'Path=/')
+    if ($ExpiryDate -ne [datetime]::MinValue) {
+        $parts += "Expires=$($ExpiryDate.ToUniversalTime().ToString('R'))"
+    }
+    if ($HttpOnly) { $parts += 'HttpOnly' }
+    if ($Secure)   { $parts += 'Secure' }
+    $parts += "SameSite=$SameSite"
+
+    Add-PodeHeader -Name 'Set-Cookie' -Value ($parts -join '; ')
+
+    # Register in Pode's internal tracking so Remove-PodeCookie still works
+    $cookie = [System.Net.Cookie]::new($Name, $Value)
+    $cookie.HttpOnly = [bool]$HttpOnly
+    $cookie.Secure = [bool]$Secure
+    $cookie.Path = '/'
+    if ($ExpiryDate -ne [datetime]::MinValue) {
+        $cookie.Expires = $ExpiryDate.ToUniversalTime()
+    }
+    $WebEvent.PendingCookies[$cookie.Name] = $cookie
+}
+
+<#
+.SYNOPSIS
     Helper to extract cookie value (Pode returns hashtable or string depending on version)
 .PARAMETER Name
     The name of the cookie to retrieve
@@ -204,6 +256,12 @@ function Assert-AuthenticatedSession {
         Write-PodeJsonResponse -Value @{ success = $false; error = 'Not authenticated' } -StatusCode 401
         return $false
     }
+    if ($ctx.Session.ExpiresAt -lt (Get-Date)) {
+        Remove-AuthSession -SessionId $ctx.SessionId
+        Remove-PodeCookie -Name 'pim_session'
+        Write-PodeJsonResponse -Value @{ success = $false; error = 'Session expired' } -StatusCode 401
+        return $false
+    }
     return $true
 }
 
@@ -221,7 +279,7 @@ function Invoke-AuthLogin {
         $oauth = Get-OAuthConfig
         $state = New-SecureToken
 
-        Set-PodeCookie -Name 'oauth_state' -Value $state -ExpiryDate ([datetime]::UtcNow.AddMinutes(10))
+        Set-SecureCookie -Name 'oauth_state' -Value $state -ExpiryDate ([datetime]::UtcNow.AddMinutes(10)) -SameSite 'Lax'
 
         $query = [System.Web.HttpUtility]::ParseQueryString('')
         $query['client_id']     = $oauth.ClientId
@@ -348,7 +406,7 @@ function Invoke-AuthCallback {
 
         $sessionTimeout = [int]($env:SESSION_TIMEOUT ?? '3600')
         $isHttps = (Test-Path ($env:PODE_CERT_PATH ?? '/etc/pim-certs/cert.pem'))
-        Set-PodeCookie -Name 'pim_session' -Value $sessionId -ExpiryDate ([datetime]::UtcNow.AddSeconds($sessionTimeout)) -HttpOnly -Secure:$isHttps
+        Set-SecureCookie -Name 'pim_session' -Value $sessionId -ExpiryDate ([datetime]::UtcNow.AddSeconds($sessionTimeout)) -HttpOnly -Secure:$isHttps -SameSite 'Lax'
         Remove-PodeCookie -Name 'oauth_state'
 
         Move-PodeResponseUrl -Url '/'
