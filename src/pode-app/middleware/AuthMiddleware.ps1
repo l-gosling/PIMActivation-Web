@@ -113,7 +113,7 @@ function Invoke-AuthLogin {
         $oauth = Get-OAuthConfig
         $state = New-SecureToken
 
-        Set-PodeCookie -Name 'oauth_state' -Value $state -Expiry ([datetime]::UtcNow.AddMinutes(10))
+        Set-PodeCookie -Name 'oauth_state' -Value $state -ExpiryDate ([datetime]::UtcNow.AddMinutes(10))
 
         $query = [System.Web.HttpUtility]::ParseQueryString('')
         $query['client_id']     = $oauth.ClientId
@@ -192,9 +192,6 @@ function Invoke-AuthCallback {
         $payloadJson = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($payloadBase64))
         $claims = $payloadJson | ConvertFrom-Json
 
-        # Generate CSRF token for this session
-        $csrfToken = New-SecureToken
-
         # Create session with cryptographic ID
         $sessionId = New-SecureToken
         Set-AuthSession -SessionId $sessionId -Data @{
@@ -203,16 +200,13 @@ function Invoke-AuthCallback {
             Name         = $claims.name ?? $claims.preferred_username ?? $claims.upn
             AccessToken  = $tokenResponse.access_token
             RefreshToken = $tokenResponse.refresh_token
-            CsrfToken    = $csrfToken
             ExpiresAt    = (Get-Date).AddSeconds([int]($tokenResponse.expires_in ?? 3600))
             CreatedAt    = Get-Date
         }
 
         Write-Host "Session created for: $($claims.name)"
 
-        # Set cookies via Pode (HttpOnly for session, not for CSRF so JS can read it)
-        Set-PodeCookie -Name 'pim_session' -Value $sessionId -Expiry ([datetime]::UtcNow.AddHours(1)) -HttpOnly
-        Set-PodeCookie -Name 'pim_csrf' -Value $csrfToken -Expiry ([datetime]::UtcNow.AddHours(1))
+        Set-PodeCookie -Name 'pim_session' -Value $sessionId -ExpiryDate ([datetime]::UtcNow.AddHours(1)) -HttpOnly
         Remove-PodeCookie -Name 'oauth_state'
 
         Move-PodeResponseUrl -Url '/'
@@ -255,7 +249,6 @@ function Invoke-AuthLogout {
         }
 
         Remove-PodeCookie -Name 'pim_session'
-        Remove-PodeCookie -Name 'pim_csrf'
 
         Write-PodeJsonResponse -Value @{ success = $true; message = 'Logged out successfully' }
     }
@@ -290,8 +283,7 @@ function Invoke-AuthMe {
         if ($session.ExpiresAt -lt (Get-Date)) {
             Remove-AuthSession -SessionId $sessionId
             Remove-PodeCookie -Name 'pim_session'
-            Remove-PodeCookie -Name 'pim_csrf'
-            Write-PodeJsonResponse -Value @{ success = $false; error = 'Session expired' } -StatusCode 401
+                Write-PodeJsonResponse -Value @{ success = $false; error = 'Session expired' } -StatusCode 401
             return
         }
 

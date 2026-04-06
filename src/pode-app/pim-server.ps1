@@ -84,63 +84,8 @@ Start-PodeServer -Name 'PIM-Activation' -Threads 5 {
         Clear-ExpiredAuthSessions
     }
 
-    # Endware: append SameSite=Lax to our cookies
-    Add-PodeEndware -ScriptBlock {
-        $cookies = $WebEvent.Response.Headers['Set-Cookie']
-        if ($cookies) {
-            foreach ($c in @($cookies)) {
-                if ($c -match '^(pim_|oauth_)' -and $c -notmatch 'SameSite') {
-                    $WebEvent.Response.Headers.Remove('Set-Cookie')
-                    $WebEvent.Response.Headers.Add('Set-Cookie', "$c; SameSite=Lax")
-                }
-            }
-        }
-    }
-
     # Set the folder for static files
     $publicPath = Join-Path $PSScriptRoot 'public'
-
-    # CORS middleware - restrict to same origin
-    Add-PodeMiddleware -Name 'CorsMiddleware' -ScriptBlock {
-        $origin = $WebEvent.Request.Headers['Origin']
-        $host = $WebEvent.Request.Headers['Host']
-
-        # Only allow same-origin requests
-        if ($origin -and $origin -notmatch "^https?://$([regex]::Escape($host))$") {
-            Set-PodeResponseStatus -Code 403
-            return $false
-        }
-
-        if ($origin) {
-            Set-PodeHeader -Name 'Access-Control-Allow-Origin' -Value $origin
-            Set-PodeHeader -Name 'Access-Control-Allow-Methods' -Value 'GET, POST, DELETE, OPTIONS'
-            Set-PodeHeader -Name 'Access-Control-Allow-Headers' -Value 'Content-Type, X-CSRF-Token'
-            Set-PodeHeader -Name 'Access-Control-Allow-Credentials' -Value 'true'
-        }
-
-        if ($WebEvent.Method -eq 'OPTIONS') {
-            Set-PodeResponseStatus -Code 204
-            return $false
-        }
-
-        return $true
-    }
-
-    # CSRF middleware - validate token on POST/PUT/DELETE requests
-    Add-PodeMiddleware -Name 'CsrfMiddleware' -ScriptBlock {
-        # Skip CSRF check for safe methods and non-API routes
-        if ($WebEvent.Method -in @('GET', 'HEAD', 'OPTIONS')) { return $true }
-        if ($WebEvent.Path -notlike '/api/*') { return $true }
-        # Skip for logout (session is being destroyed anyway)
-        if ($WebEvent.Path -eq '/api/auth/logout') { return $true }
-
-        if (-not (Test-CsrfToken)) {
-            Write-PodeJsonResponse -Value @{ success = $false; error = 'Invalid CSRF token' } -StatusCode 403
-            return $false
-        }
-
-        return $true
-    }
 
     # Health check endpoint
     Add-PodeRoute -Method Get -Path '/api/health' -ScriptBlock {

@@ -12,28 +12,12 @@ class ApiClient {
     /**
      * Generic fetch with error handling
      */
-    /**
-     * Read CSRF token from cookie
-     */
-    getCsrfToken() {
-        const match = document.cookie.match(/(?:^|;\s*)pim_csrf=([^;]+)/);
-        return match ? match[1] : null;
-    }
-
     async fetch(endpoint, options = {}) {
         const url = `${this.baseUrl}${endpoint}`;
         const headers = {
             'Content-Type': 'application/json',
             ...options.headers
         };
-
-        // Attach CSRF token on state-changing requests
-        if (options.method && options.method !== 'GET') {
-            const csrf = this.getCsrfToken();
-            if (csrf) {
-                headers['X-CSRF-Token'] = csrf;
-            }
-        }
 
         try {
             const response = await fetch(url, {
