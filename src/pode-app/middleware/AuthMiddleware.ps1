@@ -133,15 +133,23 @@ function Get-OAuthConfig {
     $clientSecret = $env:ENTRA_CLIENT_SECRET
     $redirectUri = $env:ENTRA_REDIRECT_URI ?? "http://localhost:$($env:PODE_PORT ?? '8080')/api/auth/callback"
 
-    return @{
+    $result = @{
         TenantId      = $tenantId
         ClientId      = $clientId
         ClientSecret  = $clientSecret
         RedirectUri   = $redirectUri
         AuthorizeUrl  = "https://login.microsoftonline.com/$tenantId/oauth2/v2.0/authorize"
         TokenUrl      = "https://login.microsoftonline.com/$tenantId/oauth2/v2.0/token"
-        Scopes        = 'openid profile email offline_access User.Read RoleManagement.ReadWrite.Directory PrivilegedAccess.ReadWrite.AzureADGroup Policy.Read.All AdministrativeUnit.Read.All AuditLog.Read.All'
+        Scopes        = 'openid profile email offline_access User.Read RoleManagement.ReadWrite.Directory PrivilegedAccess.ReadWrite.AzureADGroup Policy.Read.All AdministrativeUnit.Read.All'
     }
+
+    # Only request AuditLog.Read.All when audit log sync is enabled
+    $config = Get-AllConfig
+    if ($config.IncludeAuditLogs) {
+        $result.Scopes += ' AuditLog.Read.All'
+    }
+
+    return $result
 }
 
 <#

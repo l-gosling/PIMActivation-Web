@@ -25,6 +25,7 @@ function Invoke-GetFeatureConfig {
             includeEntraRoles      = $config.IncludeEntraRoles
             includeGroups          = $config.IncludeGroups
             includeAzureResources  = $config.IncludeAzureResources
+            includeAuditLogs       = $config.IncludeAuditLogs
             sessionTimeout         = $config.SessionTimeout
             graphBatchSize         = $config.GraphBatchSize
         }

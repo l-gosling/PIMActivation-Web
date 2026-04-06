@@ -45,6 +45,7 @@ function Get-AllConfig {
         IncludeEntraRoles   = [bool]::Parse((Get-ConfigValue 'INCLUDE_ENTRA_ROLES' 'true'))
         IncludeGroups       = [bool]::Parse((Get-ConfigValue 'INCLUDE_GROUPS' 'true'))
         IncludeAzureResources = [bool]::Parse((Get-ConfigValue 'INCLUDE_AZURE_RESOURCES' 'false'))
+        IncludeAuditLogs    = [bool]::Parse((Get-ConfigValue 'INCLUDE_AUDIT_LOGS' 'true'))
         GraphApiTimeout     = [int](Get-ConfigValue 'GRAPH_API_TIMEOUT' '30000')
         GraphBatchSize      = [int](Get-ConfigValue 'GRAPH_BATCH_SIZE' '20')
     }

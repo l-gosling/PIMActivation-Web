@@ -217,8 +217,10 @@ class PIMApplication {
             await window.profileManager.loadProfiles();
             await window.historyManager.loadHistory();
 
-            // Load Entra audit logs in background (non-blocking)
-            window.historyManager.loadAuditHistory().catch(() => {});
+            // Load Entra audit logs in background if enabled (non-blocking)
+            if (this.config?.includeAuditLogs !== false) {
+                window.historyManager.loadAuditHistory().catch(() => {});
+            }
 
             this.initialized = true;
             console.log('PIM Application initialized');
