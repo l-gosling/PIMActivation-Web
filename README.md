@@ -55,7 +55,7 @@ docker pull lgosling/pim-activation
 
 ### 2. Configure Environment
 
-Create a `.env` file with your Entra ID app registration details:
+Create a `.env` file with your Entra ID app registration details (see [`.env.example`](.env.example) for all options):
 
 ```env
 ENTRA_TENANT_ID=your-tenant-id.onmicrosoft.com
@@ -66,12 +66,21 @@ ENTRA_REDIRECT_URI=https://{FQDN}/api/auth/callback
 
 ### 3. Set Up HTTPS Certificate
 
+Place your certificate and private key from a trusted certificate authority in the `certs/` directory:
+
 ```bash
 mkdir -p certs
-openssl req -x509 -newkey rsa:4096 -keyout certs/key.pem -out certs/cert.pem -days 365 -nodes -subj "/CN={FQDN}"
+# Copy your CA-signed certificate and key:
+cp /path/to/your/cert.pem certs/cert.pem
+cp /path/to/your/key.pem  certs/key.pem
 ```
 
-See [CERTIFICATES.md](CERTIFICATES.md) for production certificate options (Let's Encrypt, enterprise CA, PFX).
+> **For testing only**, you can generate a self-signed certificate:
+> ```bash
+> openssl req -x509 -newkey rsa:4096 -keyout certs/key.pem -out certs/cert.pem -days 365 -nodes -subj "/CN={FQDN}"
+> ```
+
+See [CERTIFICATES.md](CERTIFICATES.md) for more options (Let's Encrypt, enterprise CA, PFX).
 
 ### 4. Start the Container
 
@@ -134,13 +143,13 @@ Add the following **delegated** permissions and grant admin consent:
 | `PrivilegedAccess.ReadWrite.AzureADGroup` | Microsoft Graph | Delegated | Yes | List and activate/deactivate PIM-enabled group memberships |
 | `Policy.Read.All` | Microsoft Graph | Delegated | Yes | Read role policies (max duration, MFA, justification, ticket, approval) |
 | `AdministrativeUnit.Read.All` | Microsoft Graph | Delegated | Yes | Resolve Administrative Unit IDs to display names |
-| `AuditLog.Read.All` | Microsoft Graph | Delegated | Yes | Read Entra audit logs for activation history sync |
 
-#### Optional (for Azure Resource Roles)
+#### Optional
 
 | Permission | API | Type | Admin Consent | Purpose |
 |-----------|-----|------|---------------|---------|
-| `user_impersonation` | Azure Service Management | Delegated | No | List and activate/deactivate Azure PIM roles across subscriptions |
+| `AuditLog.Read.All` | Microsoft Graph | Delegated | Yes | Read Entra audit logs for activation history sync (`INCLUDE_AUDIT_LOGS=true`) |
+| `user_impersonation` | Azure Service Management | Delegated | No | List and activate/deactivate Azure PIM roles across subscriptions (`INCLUDE_AZURE_RESOURCES=true`) |
 
 > **Note:** `user_impersonation` on Azure Service Management does not require admin consent and does not grant elevated access. Enable `INCLUDE_AZURE_RESOURCES=true` in `.env` to use this feature.
 
@@ -196,6 +205,7 @@ All configuration is done via the `.env` file. The container reads these at star
 | `INCLUDE_ENTRA_ROLES` | `true` | Enable Entra ID directory roles |
 | `INCLUDE_GROUPS` | `true` | Enable PIM-enabled groups |
 | `INCLUDE_AZURE_RESOURCES` | `false` | Enable Azure resource roles (requires `user_impersonation` permission) |
+| `INCLUDE_AUDIT_LOGS` | `true` | Enable Entra audit log sync for activation history (requires `AuditLog.Read.All` permission with admin consent) |
 
 ### Theme & Branding
 
@@ -288,6 +298,22 @@ The Graph access token auto-refreshes via the refresh token. If refresh fails, s
 1. Ensure `AuditLog.Read.All` permission is granted with admin consent
 2. Sign out and back in to get a token with the new scope
 3. Audit logs load in the background — check browser console for errors
+
+### API calls fail with "No data available" or "Address not available"
+
+The container uses Alpine Linux with musl libc, which has a known issue where Docker's internal DNS (127.0.0.11) returns only IPv6 (AAAA) records to .NET. Since `Invoke-WebRequest` cannot connect via IPv6 in this environment, all API calls to Microsoft Graph and Entra ID fail.
+
+**Fix:** Add external DNS servers in `docker-compose.yml` (already included by default):
+
+```yaml
+services:
+  pim-app:
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+```
+
+This forces DNS resolution through Google's public DNS, which returns proper IPv4 (A) records. Do not remove this setting unless you switch to a Debian-based container image.
 
 ### HTTPS certificate issues
 
