@@ -70,8 +70,17 @@ Start-PodeServer -Name 'PIM-Activation' -Threads 5 {
     $keyPath = $env:PODE_CERT_KEY_PATH ?? '/etc/pim-certs/key.pem'
 
     if ((Test-Path $certPath) -and (Test-Path $keyPath)) {
-        Add-PodeEndpoint -Address * -Port $serverPort -Protocol Https -Certificate $certPath -CertificateKey $keyPath
+        Add-PodeEndpoint -Address * -Port $serverPort -Protocol Https -Certificate $certPath -CertificateKey $keyPath -Name 'MainHttps'
         Write-Log -Message "HTTPS endpoint configured on port $serverPort" -Level 'Information'
+
+        # HTTP redirect endpoint
+        $httpPort = [int]($env:PODE_HTTP_PORT ?? '8081')
+        Add-PodeEndpoint -Address * -Port $httpPort -Protocol Http -Name 'HttpRedirect'
+        Add-PodeRoute -Method * -Path * -EndpointName 'HttpRedirect' -ScriptBlock {
+            $host = $WebEvent.Request.Host -replace ':\d+$', ''
+            Move-PodeResponseUrl -Url "https://${host}$($WebEvent.Path)" -StatusCode 301
+        }
+        Write-Log -Message "HTTP redirect endpoint configured on port $httpPort" -Level 'Information'
     }
     else {
         Add-PodeEndpoint -Address * -Port $serverPort -Protocol Http

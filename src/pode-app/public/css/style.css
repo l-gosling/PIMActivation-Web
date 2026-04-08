@@ -1367,6 +1367,33 @@ body.dark-theme .section-title-bar {
     color: var(--neutral-tertiary);
 }
 
+.profile-role-count {
+    position: relative;
+    cursor: default;
+    text-decoration: underline dotted;
+    text-underline-offset: 2px;
+}
+
+.profile-tooltip {
+    display: none;
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 0;
+    background: var(--neutral-dark);
+    color: var(--neutral-light-alt);
+    font-size: var(--font-size-sm);
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow-md);
+    white-space: nowrap;
+    z-index: 1000;
+    line-height: 1.5;
+}
+
+.profile-role-count:hover .profile-tooltip {
+    display: block;
+}
+
 .profile-actions {
     display: flex;
     gap: var(--spacing-xs);

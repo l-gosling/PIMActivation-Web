@@ -43,8 +43,8 @@ RUN chmod -R 755 /app && \
     chmod -R 700 /etc/pim-config && \
     chmod -R 755 /etc/pim-certs
 
-# Expose port
-EXPOSE 8080
+# Expose ports (8080 = HTTPS, 8081 = HTTP redirect)
+EXPOSE 8080 8081
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \

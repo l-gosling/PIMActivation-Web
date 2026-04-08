@@ -74,15 +74,17 @@ class ProfileManager {
                 const durH = Math.floor((p.durationMinutes || 60) / 60);
                 const durM = (p.durationMinutes || 60) % 60;
                 const durText = (durH > 0 ? `${durH}h` : '') + (durM > 0 ? `${durM}m` : '') || '0m';
-                const roleNames = (p.roles || []).map(r => {
+                const roleLines = (p.roles || []).map(r => {
                     const live = eligible.find(e => (e.uid || e.id) === r.uid);
-                    return live ? live.name : (r.uid || 'Unknown');
+                    if (!live) return r.uid || 'Unknown';
+                    const scope = live.scope && live.scope !== 'Directory' ? ` (${live.scope})` : '';
+                    return live.name + scope;
                 });
-                const tooltip = roleNames.join('&#10;');
+                const tooltipHtml = roleLines.map(n => escapeHtml(n)).join('<br>');
                 return `<div class="profile-item" data-index="${i}">
                     <div class="profile-info">
                         <span class="profile-name">${escapeHtml(p.name)}</span>
-                        <span class="profile-meta" title="${tooltip}">${roleCount} role${roleCount !== 1 ? 's' : ''} &middot; ${durText}</span>
+                        <span class="profile-meta"><span class="profile-role-count">${roleCount} role${roleCount !== 1 ? 's' : ''}<span class="profile-tooltip">${tooltipHtml}</span></span> &middot; ${durText}</span>
                     </div>
                     <div class="profile-actions">
                         <button class="btn btn-primary btn-sm profile-activate-btn" data-index="${i}">Activate</button>
