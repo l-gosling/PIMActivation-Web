@@ -12,36 +12,30 @@ A web-based Privileged Identity Management (PIM) tool for Microsoft Entra ID, PI
 
 ## Key Features
 
-- **Web-Based UI** - No client installation required, accessible from any browser
 - **Entra ID Roles** - View and activate/deactivate Entra ID directory roles with AU scope support
 - **PIM Groups** - Manage PIM-enabled security group memberships (member/owner)
 - **Azure Resources** - Activate/deactivate Azure subscription and resource roles via PIM
+- **Web-Based UI** - No client installation required, accessible from any browser
 - **Saved Profiles** - Save frequently used role combinations and activate them with two clicks
 - **Activation History** - Built-in history log with analytics (success rate, most activated roles, activity by day)
 - **Entra Audit Logs** - Background sync of PIM events from Entra audit logs (last 30 days)
-- **Progress Bar** - Visual progress for batch activations/deactivations with per-role policy enforcement
-- **Policy Enforcement** - Automatic duration capping when a role's policy max is lower than the selected duration
-- **OAuth 2.0** - Secure authentication via Entra ID with automatic token refresh
-- **HTTPS** - TLS support with custom certificates
 - **Dark/Light Theme** - Auto, light, or dark mode with full color customization
-- **Security Headers** - HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy
-- **SameSite Cookies** - CSRF protection via SameSite=Lax on all session cookies
+
 
 ## Screenshots
 
-<!-- Paste your screenshots below. Use this format: -->
-<!-- ![Description](docs/images/screenshot-name.png) -->
-
-| | |
-|---|---|
-| ![Screenshot 1](docs/images/screenshot1.png) | ![Screenshot 2](docs/images/screenshot2.png) |
-| ![Screenshot 3](docs/images/screenshot3.png) | ![Screenshot 4](docs/images/screenshot4.png) |
+### Interface
+<img width="1196" height="739" alt="image" src="https://github.com/user-attachments/assets/a52de1ad-ba03-47b4-aa2a-6006c3120029" />
 
 ## Demo
 
-<!-- Paste your video link below. GitHub supports .mp4 files dropped into the editor, or link to an external host. -->
+### Activation Profiles
 
-https://github.com/user-attachments/assets/YOUR-VIDEO-ID
+https://github.com/user-attachments/assets/b6223950-b397-479b-8b81-770290ce6ac4
+
+### History
+https://github.com/user-attachments/assets/eaf55142-d722-4164-b14a-a9674688ccae
+
 
 ## Quick Start
 
