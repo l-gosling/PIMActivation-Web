@@ -89,7 +89,6 @@ docker run -d \
   --name pim-activation \
   --env-file .env \
   -v ./certs:/etc/pim-certs:ro \
-  -v ./config:/etc/pim-config:ro \
   -v pim-data:/var/pim-data \
   -v ./logs:/var/log/pim:rw \
   -p 443:8080 \
@@ -161,7 +160,6 @@ docker-compose.yml
        |
        Volumes:
        |-- ./certs:/etc/pim-certs:ro     (TLS certificates)
-       |-- ./config:/etc/pim-config:ro   (config files)
        |-- pim-data:/var/pim-data        (persistent preferences, profiles, history)
        |-- ./logs:/var/log/pim:rw        (log files)
        |
