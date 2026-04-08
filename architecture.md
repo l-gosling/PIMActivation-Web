@@ -3,7 +3,7 @@
 This document describes the system architecture of the PIM Activation web application, module dependencies, and the reasoning behind core design decisions (Architecture Decision Records).
 
 > **Audience:** Developers maintaining, extending, or debugging the system.
-> **Prerequisite:** Basic PowerShell knowledge. For an introduction to the Pode framework, see [`pode-onboarding.md`](pode-onboarding.md).
+> **Prerequisite:** Basic PowerShell knowledge. For Pode framework docs, see [badgerati.github.io/Pode](https://badgerati.github.io/Pode/).
 
 ---
 
@@ -129,7 +129,7 @@ graph LR
     linkStyle 2 stroke:#e74c3c,stroke-dasharray:5
 ```
 
-Scripts are loaded **twice** (see [`pode-onboarding.md`](pode-onboarding.md), section 5):
+Scripts are loaded **twice**:
 
 1. **Dot-sourcing in the main script** (`pim-server.ps1`, search: `# Import custom modules`) — makes functions available for initialization (e.g., `Initialize-Logger`)
 2. **`Use-PodeScript` in the server block** (`pim-server.ps1`, search: `Use-PodeScript`) — makes functions available in worker thread runspaces
@@ -286,8 +286,8 @@ User preferences, profiles, and history are stored as JSON files in `/var/pim-da
 
 | | |
 |---|---|
-| **Context** | Alpine Linux in Docker has IPv6 DNS resolution issues. Docker's internal DNS (127.0.0.11) returns only AAAA records to .NET, causing `Invoke-WebRequest` to fail. |
-| **Decision** | Use `Invoke-WebRequest` (native PowerShell) with `dns: [8.8.8.8, 8.8.4.4]` in docker-compose.yml to get proper A records. |
+| **Context** | Alpine Linux (musl libc) in Docker has IPv6 DNS resolution issues. Docker's internal DNS (127.0.0.11) returns only AAAA records to .NET, causing `Invoke-WebRequest` to fail. Disabling IPv6 via `DOTNET_SYSTEM_NET_DISABLEIPV6=1` or `sysctls` does not help — musl's `getaddrinfo()` still only receives AAAA records, which are then discarded, leaving zero usable addresses. |
+| **Decision** | Use `Invoke-WebRequest` (native PowerShell) with `dns: [8.8.8.8, 8.8.4.4]` in docker-compose.yml to get proper A records. The only alternative is switching from Alpine to a Debian-based image (glibc). |
 | **Consequence** | No external binary dependency for HTTP. Tokens never appear in process command-line args. No temp files on disk. |
 | **Files** | `PIMApiLayer.ps1` (`Invoke-AzureApi`, `Invoke-GraphApi`), `AuthMiddleware.ps1` (`Invoke-AuthCallback`), `docker-compose.yml` |
 

@@ -62,7 +62,7 @@ docker compose down && docker compose up -d --build
 | `Dockerfile` | Docker | Container build definition |
 | `docker-compose.yml` | YAML | Service orchestration |
 
-For detailed architecture, see [architecture.md](architecture.md). For Pode framework concepts, see [pode-onboarding.md](pode-onboarding.md).
+For detailed architecture, see [architecture.md](architecture.md).
 
 ## Ways to Contribute
 

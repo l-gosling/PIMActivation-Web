@@ -27,9 +27,25 @@ A web-based Privileged Identity Management (PIM) tool for Microsoft Entra ID, PI
 - **Security Headers** - HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy
 - **SameSite Cookies** - CSRF protection via SameSite=Lax on all session cookies
 
+## Screenshots
+
+<!-- Paste your screenshots below. Use this format: -->
+<!-- ![Description](docs/images/screenshot-name.png) -->
+
+| | |
+|---|---|
+| ![Screenshot 1](docs/images/screenshot1.png) | ![Screenshot 2](docs/images/screenshot2.png) |
+| ![Screenshot 3](docs/images/screenshot3.png) | ![Screenshot 4](docs/images/screenshot4.png) |
+
+## Demo
+
+<!-- Paste your video link below. GitHub supports .mp4 files dropped into the editor, or link to an external host. -->
+
+https://github.com/user-attachments/assets/YOUR-VIDEO-ID
+
 ## Quick Start
 
-> **Important:** Use a fully qualified domain name (FQDN) like `pim.example.com` instead of `localhost` for production deployments. Entra ID OAuth redirect URIs and cookies work most reliably with a proper FQDN. The examples below use `pim.example.com` as a placeholder — replace it with your actual hostname.
+> **Important:** Replace `{FQDN}` with your actual fully qualified domain name (e.g. `pim.corp.example.com`) in all examples below and in your `.env` file. Entra ID OAuth redirect URIs and cookies require a proper FQDN — do not use `localhost`.
 
 ### 1. Pull the Image
 
@@ -45,14 +61,14 @@ Create a `.env` file with your Entra ID app registration details:
 ENTRA_TENANT_ID=your-tenant-id.onmicrosoft.com
 ENTRA_CLIENT_ID=your-app-client-id
 ENTRA_CLIENT_SECRET=your-app-client-secret
-ENTRA_REDIRECT_URI=https://pim.example.com/api/auth/callback
+ENTRA_REDIRECT_URI=https://{FQDN}/api/auth/callback
 ```
 
 ### 3. Set Up HTTPS Certificate
 
 ```bash
 mkdir -p certs
-openssl req -x509 -newkey rsa:4096 -keyout certs/key.pem -out certs/cert.pem -days 365 -nodes -subj "/CN=pim.example.com"
+openssl req -x509 -newkey rsa:4096 -keyout certs/key.pem -out certs/cert.pem -days 365 -nodes -subj "/CN={FQDN}"
 ```
 
 See [CERTIFICATES.md](CERTIFICATES.md) for production certificate options (Let's Encrypt, enterprise CA, PFX).
@@ -79,7 +95,7 @@ docker run -d \
 
 ### 5. Access the UI
 
-Open **https://pim.example.com** in your browser. You will be automatically redirected to Entra ID for authentication.
+Open **https://{FQDN}** in your browser. You will be automatically redirected to Entra ID for authentication.
 
 ## Entra ID App Registration
 
@@ -88,12 +104,12 @@ Open **https://pim.example.com** in your browser. You will be automatically redi
 1. Go to **Azure Portal** > **App registrations** > **New registration**
 2. Name: `PIM Activation Web` (or your choice)
 3. Supported account types: **Single tenant**
-4. Redirect URI: **Web** > `https://pim.example.com/api/auth/callback`
+4. Redirect URI: **Web** > `https://{FQDN}/api/auth/callback`
 
 ### Configure Authentication
 
 1. Go to **Authentication**
-2. Add redirect URI: `https://pim.example.com/api/auth/callback`
+2. Add redirect URI: `https://{FQDN}/api/auth/callback`
 3. Enable **ID tokens** under Implicit grant
 
 ### Add Client Secret
@@ -161,7 +177,7 @@ All configuration is done via the `.env` file. The container reads these at star
 | `ENTRA_TENANT_ID` | *required* | Your Entra ID tenant ID |
 | `ENTRA_CLIENT_ID` | *required* | App registration client ID |
 | `ENTRA_CLIENT_SECRET` | *required* | App registration client secret |
-| `ENTRA_REDIRECT_URI` | `https://pim.example.com/api/auth/callback` | OAuth redirect URI |
+| `ENTRA_REDIRECT_URI` | `https://{FQDN}/api/auth/callback` | OAuth redirect URI |
 
 ### Server
 
@@ -205,7 +221,6 @@ PIMActivation/
 |-- docker-compose.yml                  # Service orchestration + DNS config
 |-- .env.example                        # Environment template
 |-- architecture.md                     # System architecture & ADRs
-|-- pode-onboarding.md                  # Pode framework onboarding guide
 |-- CERTIFICATES.md                     # HTTPS certificate guide
 |-- certs/                              # TLS certificates (mounted)
 |-- config/                             # Config files (mounted)
@@ -287,7 +302,6 @@ Both MD5 values must match. See [CERTIFICATES.md](CERTIFICATES.md) for more.
 ## Documentation
 
 - [Architecture & Decisions](architecture.md) — system design, module dependencies, ADRs, Mermaid diagrams
-- [Pode Onboarding](pode-onboarding.md) — Pode framework concepts mapped to standard PowerShell
 - [HTTPS Certificates](CERTIFICATES.md) — TLS setup guide
 - [Pode Framework](https://badgerati.github.io/Pode/) — official Pode documentation
 - [Microsoft Graph PIM API](https://learn.microsoft.com/en-us/graph/api/resources/privilegedidentitymanagementv3-overview)

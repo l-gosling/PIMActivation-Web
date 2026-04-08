@@ -7,8 +7,7 @@
     Provides functions to query, activate, and deactivate PIM roles
     using the Microsoft Graph API and Azure Management API.
     Uses Invoke-WebRequest for HTTP calls. IPv6 DNS resolution issues on
-    Alpine Linux are mitigated by setting DOTNET_SYSTEM_NET_DISABLEIPV6=1
-    in the container environment.
+    Alpine Linux (musl libc) are mitigated by external DNS (dns: in docker-compose.yml).
 #>
 
 function Get-GraphBaseUrl {
