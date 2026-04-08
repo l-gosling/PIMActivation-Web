@@ -15,12 +15,13 @@ RUN pwsh -Command "Install-Module -Name Pode -Force -Scope AllUsers"
 # Runtime stage
 FROM mcr.microsoft.com/dotnet/sdk:8.0-alpine
 
-# Install runtime dependencies
+# Install runtime dependencies and apply security patches
 RUN apk add --no-cache \
     curl \
     tini \
     ca-certificates \
-    icu-libs
+    icu-libs && \
+    apk upgrade --no-cache
 
 # Install Pode
 RUN pwsh -Command "Install-Module -Name Pode -Force -Scope AllUsers"

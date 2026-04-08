@@ -92,6 +92,8 @@ docker run -d \
   -v pim-data:/var/pim-data \
   -v ./logs:/var/log/pim:rw \
   -p 443:8080 \
+  -p 80:8081 \
+  --dns 8.8.8.8 --dns 8.8.4.4 \
   lgosling/pim-activation
 ```
 
@@ -165,6 +167,7 @@ docker-compose.yml
        |
        Ports:
        |-- 443 -> 8080 (HTTPS, configurable via HTTPS_PORT)
+       |-- 80  -> 8081 (HTTP, redirects to HTTPS)
 ```
 
 ## Configuration Reference
@@ -185,6 +188,7 @@ All configuration is done via the `.env` file. The container reads these at star
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `HTTPS_PORT` | `443` | Host port for HTTPS |
+| `HTTP_PORT` | `80` | Host port for HTTP (redirects to HTTPS) |
 | `PODE_PORT` | `8080` | Internal container port |
 | `PODE_MODE` | `production` | Server mode (`production` or `development`) |
 | `LOG_LEVEL` | `Information` | Log level (`Verbose`, `Debug`, `Information`, `Warning`, `Error`) |
@@ -220,12 +224,11 @@ All configuration is done via the `.env` file. The container reads these at star
 ```
 PIMActivation/
 |-- Dockerfile                          # Container build (Alpine Linux)
-|-- docker-compose.yml                  # Service orchestration + DNS config
+|-- docker-compose.yml                  # Service orchestration
 |-- .env.example                        # Environment template
 |-- architecture.md                     # System architecture & ADRs
 |-- CERTIFICATES.md                     # HTTPS certificate guide
 |-- certs/                              # TLS certificates (mounted)
-|-- config/                             # Config files (mounted)
 |-- logs/                               # Log output (mounted)
 |-- src/pode-app/
     |-- pim-server.ps1                  # Pode server entry point
