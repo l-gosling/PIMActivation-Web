@@ -220,7 +220,18 @@ function Invoke-GetRolePolicies {
             return
         }
 
-        $result = Get-PIMRolePolicyForWeb -RoleId $RoleId
+        # Policy data is tenant-wide (same for every user), so cache the result to cut
+        # Graph API calls when many users activate the same role.
+        $cacheTtl = [int]($env:POLICY_CACHE_TTL ?? '600')
+        $cacheKey = "policy:$RoleId"
+        $result = if ($cacheTtl -gt 0) { Get-PodeCache -Key $cacheKey } else { $null }
+
+        if (-not $result) {
+            $result = Get-PIMRolePolicyForWeb -RoleId $RoleId
+            if ($cacheTtl -gt 0 -and $result.success) {
+                Set-PodeCache -Key $cacheKey -Value $result -Ttl $cacheTtl
+            }
+        }
 
         Write-PodeJsonResponse -Value $result -StatusCode 200
     }

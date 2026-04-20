@@ -61,8 +61,13 @@ catch {
     exit 1
 }
 
+# Thread count is read outside the ServerScriptBlock (it's a Start-PodeServer parameter).
+# Runspaces are I/O-bound here (Graph API calls) so thread count > CPU cores is fine.
+$threadCount = [int]($env:PODE_THREADS ?? '10')
+Write-Log -Message "Pode request threads: $threadCount" -Level 'Information'
+
 # Start Pode server
-Start-PodeServer -Name 'PIM-Activation' -Threads 5 {
+Start-PodeServer -Name 'PIM-Activation' -Threads $threadCount {
 
     # Configure endpoint (HTTPS if certificate is present, otherwise HTTP)
     $serverPort = [int]($env:PODE_PORT ?? '8080')
@@ -95,7 +100,17 @@ Start-PodeServer -Name 'PIM-Activation' -Threads 5 {
     Use-PodeScript -Path (Join-Path $PSScriptRoot 'routes' 'Roles.ps1')
     Use-PodeScript -Path (Join-Path $PSScriptRoot 'routes' 'Config.ps1')
 
-    # Security response headers on all routes
+    # Rate limiting: global per-IP cap (protects auth endpoints from brute force / OAuth fuzzing)
+    $rateLimit = [int]($env:RATE_LIMIT_PER_MINUTE ?? '120')
+    if ($rateLimit -gt 0) {
+        Add-PodeLimitRule -Type IP -Values all -Limit $rateLimit -Seconds 60
+        Write-Log -Message "Rate limit: $rateLimit req/min per IP" -Level 'Information'
+    }
+
+    # Security response headers on all routes.
+    # (Pode 2.13 only exposes Add-PodeSecurityContentSecurityPolicy / Header / PermissionsPolicy
+    # as public cmdlets — no helpers for X-Content-Type-Options / X-Frame-Options / HSTS — so we
+    # stay on a middleware block. HSTS stays conditional on HTTPS.)
     Add-PodeMiddleware -Name 'SecurityHeaders' -ScriptBlock {
         Add-PodeHeader -Name 'X-Content-Type-Options' -Value 'nosniff'
         Add-PodeHeader -Name 'X-Frame-Options' -Value 'DENY'

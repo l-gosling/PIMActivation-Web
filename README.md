@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Docker Hub](https://img.shields.io/docker/pulls/lgosling/pim-activation?style=flat-square&label=Docker%20Hub)](https://hub.docker.com/r/lgosling/pim-activation)
 ![PowerShell 7+](https://img.shields.io/badge/PowerShell-7%2B-blue?style=flat-square)
-![Pode](https://img.shields.io/badge/Pode-2.12-purple?style=flat-square)
+![Pode](https://img.shields.io/badge/Pode-2.13-purple?style=flat-square)
 ![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20Docker-lightgrey?style=flat-square)
 
 A web-based Privileged Identity Management (PIM) tool for Microsoft Entra ID, PIM-enabled groups, and Azure Resources. Built with Pode (PowerShell HTTP server) running in Docker, with Entra ID OAuth 2.0 authentication.

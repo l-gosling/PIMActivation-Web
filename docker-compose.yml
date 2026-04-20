@@ -13,10 +13,13 @@ services:
       - ENTRA_REDIRECT_URI=${ENTRA_REDIRECT_URI:-https://localhost/api/auth/callback}
       - PODE_PORT=8080
       - PODE_MODE=${PODE_MODE:-production}
+      - PODE_THREADS=${PODE_THREADS:-10}
       - PODE_CERT_PATH=/etc/pim-certs/cert.pem
       - PODE_CERT_KEY_PATH=/etc/pim-certs/key.pem
       - LOG_LEVEL=${LOG_LEVEL:-Information}
       - SESSION_TIMEOUT=${SESSION_TIMEOUT:-3600}
+      - RATE_LIMIT_PER_MINUTE=${RATE_LIMIT_PER_MINUTE:-120}
+      - POLICY_CACHE_TTL=${POLICY_CACHE_TTL:-600}
       - INCLUDE_ENTRA_ROLES=${INCLUDE_ENTRA_ROLES:-true}
       - INCLUDE_GROUPS=${INCLUDE_GROUPS:-true}
       - INCLUDE_AZURE_RESOURCES=${INCLUDE_AZURE_RESOURCES:-false}
