@@ -46,7 +46,7 @@ $RoutesPath = Join-Path $PSScriptRoot 'routes'
 . (Join-Path $RoutesPath 'Config.ps1')
 
 # Initialize logging
-Initialize-Logger -Level $LogLevel -Path '/var/log/pim/pode.log'
+Initialize-Logger -Level $LogLevel -Path '/var/pim-data/logs/pode.log'
 
 Write-Log -Message "Starting PIM Activation Web Service" -Level 'Information'
 Write-Log -Message "Mode: $Mode, Port: $Port, LogLevel: $LogLevel" -Level 'Information'

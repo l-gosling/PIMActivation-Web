@@ -38,19 +38,17 @@ services:
     volumes:
       - ./certs:/etc/pim-certs:ro
       - pim-data:/var/pim-data
-      - ./logs:/var/log/pim:rw
+      # Logs live inside pim-data (/var/pim-data/logs/pode.log) so the non-root
+      # container doesn't need a host-side chown. Use `docker logs` for live tail,
+      # or `docker exec pim-activation-web tail -f /var/pim-data/logs/pode.log`.
     dns:
       - 8.8.8.8
       - 8.8.4.4
     networks:
       - pim-network
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-kf", "https://localhost:8080/api/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
+    # Healthcheck is defined in the Dockerfile (uses pwsh Invoke-WebRequest since
+    # curl was removed to shrink the CVE surface). Don't override it here.
 
 volumes:
   pim-data:
